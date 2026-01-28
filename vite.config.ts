@@ -11,8 +11,8 @@ export default defineConfig({
     alias: { "@": path.resolve(__dirname, "src") },
   },
   server: {
-    open: true,
-    port: 5173,
+    // open: true,
+    port: 5174,
     proxy: {
       "/api": {
         target: "http://localhost:3001",

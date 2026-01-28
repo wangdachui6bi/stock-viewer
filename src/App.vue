@@ -180,6 +180,9 @@
             </span>
           </div>
           <div class="actions">
+            <el-button type="success" plain @click="openAiPick">
+              AI 选股
+            </el-button>
             <el-select
               v-model="currentGroupId"
               size="small"
@@ -229,6 +232,7 @@
           @remove="removeCode"
           @set-holding="openHoldingModal"
           @set-group="openGroupAssign"
+          @ai-analyze="openAiAnalyze"
         />
       </section>
     </main>
@@ -331,6 +335,124 @@
         <el-button type="primary" @click="applyGroupAssign">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- AI 分析 -->
+    <el-dialog
+      v-model="aiAnalyzeModal"
+      :title="`AI 分析 · ${aiAnalyzeTarget?.name ?? ''} (${aiAnalyzeTarget?.code ?? ''})`"
+      width="720px"
+      destroy-on-close
+    >
+      <el-skeleton v-if="aiAnalyzeLoading" :rows="8" animated />
+      <template v-else>
+        <el-empty v-if="!aiAnalyzeResult" description="暂无结果" />
+        <div v-else class="ai-block">
+          <div class="ai-row">
+            <div class="ai-label">结论</div>
+            <div class="ai-value">{{ aiAnalyzeResult.summary }}</div>
+          </div>
+          <div class="ai-row">
+            <div class="ai-label">方向</div>
+            <div class="ai-value">{{ aiAnalyzeResult.bias }}</div>
+          </div>
+          <div class="ai-row">
+            <div class="ai-label">要点</div>
+            <div class="ai-value">
+              <ul>
+                <li v-for="(x, i) in aiAnalyzeResult.keyObservations" :key="i">
+                  {{ x }}
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div class="ai-row">
+            <div class="ai-label">关键位</div>
+            <div class="ai-value">
+              <div><b>支撑：</b>{{ aiAnalyzeResult.levels.support.join('，') }}</div>
+              <div><b>压力：</b>{{ aiAnalyzeResult.levels.resistance.join('，') }}</div>
+            </div>
+          </div>
+          <div class="ai-row">
+            <div class="ai-label">计划</div>
+            <div class="ai-value">
+              <div><b>入场：</b>{{ aiAnalyzeResult.plan.entry }}</div>
+              <div><b>止损/无效：</b>{{ aiAnalyzeResult.plan.invalidation }}</div>
+              <div><b>止盈：</b>{{ aiAnalyzeResult.plan.takeProfit }}</div>
+              <div><b>仓位：</b>{{ aiAnalyzeResult.plan.positionSizing }}</div>
+            </div>
+          </div>
+          <div class="ai-row">
+            <div class="ai-label">风险</div>
+            <div class="ai-value">
+              <ul>
+                <li v-for="(x, i) in aiAnalyzeResult.risks" :key="i">{{ x }}</li>
+              </ul>
+            </div>
+          </div>
+          <div class="ai-disclaimer">{{ aiAnalyzeResult.disclaimer }}</div>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- AI 选股 -->
+    <el-dialog
+      v-model="aiPickModal"
+      title="AI 选股（基于当前自选列表）"
+      width="780px"
+      destroy-on-close
+    >
+      <div class="ai-pick-controls">
+        <el-form inline>
+          <el-form-item label="TopN">
+            <el-input-number v-model="aiPickTopN" :min="1" :max="10" />
+          </el-form-item>
+          <el-form-item label="周期">
+            <el-select v-model="aiPickHorizon" style="width: 180px">
+              <el-option label="短线 1-5 天" value="swing_1_5_days" />
+              <el-option label="波段 1-4 周" value="swing_1_4_weeks" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="风险">
+            <el-select v-model="aiPickRisk" style="width: 140px">
+              <el-option label="低" value="low" />
+              <el-option label="中" value="medium" />
+              <el-option label="高" value="high" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" :loading="aiPickLoading" @click="openAiPick">
+              重新计算
+            </el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <el-skeleton v-if="aiPickLoading" :rows="10" animated />
+      <template v-else>
+        <el-empty v-if="!aiPickResult" description="暂无结果" />
+        <div v-else class="ai-block">
+          <div v-for="p in aiPickResult.picks" :key="p.code" class="ai-pick-item">
+            <div class="ai-pick-head">
+              <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
+              <span class="muted">{{ p.bias }}</span>
+            </div>
+            <ul>
+              <li v-for="(r, i) in p.reason" :key="i">{{ r }}</li>
+            </ul>
+            <div class="ai-value">
+              <div><b>入场：</b>{{ p.plan.entry }}</div>
+              <div><b>止损/无效：</b>{{ p.plan.invalidation }}</div>
+              <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
+            </div>
+            <div class="ai-value">
+              <div><b>风险：</b>{{ p.riskNotes.join('；') }}</div>
+            </div>
+            <el-divider />
+          </div>
+          <div class="ai-disclaimer">{{ aiPickResult.disclaimer }}</div>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -341,6 +463,8 @@ let searchTimer: ReturnType<typeof setTimeout> | null = null;
 import StockSearch from "./components/StockSearch.vue";
 import StockTable from "./components/StockTable.vue";
 import { fetchStockList, searchStock, searchItemToCode } from "./api/stock";
+import { aiAnalyzeStock as aiAnalyzeStockApi, aiPickStocks } from "./api/ai";
+import type { AiAnalyzeResult, AiPickResult } from "./api/ai";
 import type {
   StockItem,
   SearchItem,
@@ -407,6 +531,19 @@ const realtimeMode = ref(false);
 const realtimeInterval = ref(1.5); // 单位：秒
 let realtimeTimer: ReturnType<typeof setInterval> | null = null;
 const lastUpdateTime = ref<number | null>(null);
+
+// AI
+const aiAnalyzeModal = ref(false);
+const aiAnalyzeLoading = ref(false);
+const aiAnalyzeTarget = ref<StockItem | null>(null);
+const aiAnalyzeResult = ref<AiAnalyzeResult | null>(null);
+
+const aiPickModal = ref(false);
+const aiPickLoading = ref(false);
+const aiPickResult = ref<AiPickResult | null>(null);
+const aiPickTopN = ref(3);
+const aiPickHorizon = ref("swing_1_5_days");
+const aiPickRisk = ref("medium");
 
 function createGroupId() {
   return `g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -830,6 +967,50 @@ function refreshList() {
   loadStockList();
 }
 
+async function openAiAnalyze(row: StockItem) {
+  aiAnalyzeTarget.value = row;
+  aiAnalyzeResult.value = null;
+  aiAnalyzeModal.value = true;
+  aiAnalyzeLoading.value = true;
+  try {
+    aiAnalyzeResult.value = await aiAnalyzeStockApi({
+      stock: row,
+      horizon: aiPickHorizon.value,
+      riskProfile: aiPickRisk.value,
+    });
+  } catch (e) {
+    console.error(e);
+    ElMessage.error("AI 分析失败：请检查 VOLCENGINE_API_KEY/模型ID 或服务是否可用");
+  } finally {
+    aiAnalyzeLoading.value = false;
+  }
+}
+
+// (aiAnalyzeStockApi 已在 import 中 alias)
+
+async function openAiPick() {
+  if (!displayList.value.length) {
+    ElMessage.warning("自选列表为空，先添加一些候选标的");
+    return;
+  }
+  aiPickModal.value = true;
+  aiPickLoading.value = true;
+  aiPickResult.value = null;
+  try {
+    aiPickResult.value = await aiPickStocks({
+      candidates: displayList.value,
+      topN: aiPickTopN.value,
+      horizon: aiPickHorizon.value,
+      riskProfile: aiPickRisk.value,
+    });
+  } catch (e) {
+    console.error(e);
+    ElMessage.error("AI 选股失败：请检查 VOLCENGINE_API_KEY/模型ID 或服务是否可用");
+  } finally {
+    aiPickLoading.value = false;
+  }
+}
+
 function removeCode(code: string) {
   const lower = code.toLowerCase();
   groups.value = groups.value.map((group) => ({
@@ -1135,5 +1316,41 @@ onUnmounted(() => {
 }
 .down {
   color: var(--down);
+}
+
+.ai-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.ai-row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 0.75rem;
+}
+.ai-label {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.ai-value {
+  color: var(--text);
+}
+.ai-disclaimer {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.ai-pick-controls {
+  margin-bottom: 0.75rem;
+}
+.ai-pick-item {
+  padding: 0.25rem 0;
+}
+.ai-pick-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
 }
 </style>

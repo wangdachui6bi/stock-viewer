@@ -1,1 +1,1 @@
-{"root":["./src/main.ts","./src/vite-env.d.ts","./src/api/stock.ts","./src/types/stock.ts","./src/app.vue","./src/components/stocksearch.vue","./src/components/stocktable.vue"],"version":"5.9.3"}
+{"root":["./src/main.ts","./src/vite-env.d.ts","./src/api/ai.ts","./src/api/stock.ts","./src/types/stock.ts","./src/app.vue","./src/components/stocksearch.vue","./src/components/stocktable.vue"],"errors":true,"version":"5.9.3"}

@@ -19,6 +19,32 @@ dotenv.config({ path: path.join(rootDir, ".env") });
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
+function extractJsonObject(text: string): string {
+  const s = String(text || "").trim();
+
+  // 1) ```json ... ``` / ``` ... ```
+  const fenced = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+
+  // 2) 尝试截取第一段 JSON 对象
+  const first = s.indexOf("{");
+  const last = s.lastIndexOf("}");
+  if (first !== -1 && last !== -1 && last > first) return s.slice(first, last + 1);
+
+  return s;
+}
+
+function safeJsonParse<T = any>(text: string): T {
+  const raw = extractJsonObject(text);
+  try {
+    return JSON.parse(raw) as T;
+  } catch (e: any) {
+    // 报错时把原始前缀带出来，方便定位模型输出
+    const preview = String(text || "").slice(0, 200);
+    throw new Error(`${e?.message || "Invalid JSON"} [0] preview=${JSON.stringify(preview)}`);
+  }
+}
+
 const aiCache = new Map<string, { ts: number; content: string }>();
 const AI_CACHE_TTL_MS = 30_000;
 
@@ -30,18 +56,27 @@ function cacheKey(messages: ChatMessage[]) {
   return JSON.stringify(messages);
 }
 
-async function callChatGPT(messages: ChatMessage[]) {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.CHATGPT_API_KEY;
-  const baseUrl =
-    process.env.OPENAI_BASE_URL ||
-    process.env.CHATGPT_BASE_URL ||
-    "https://api.openai.com";
-  const model =
+async function callLLM(messages: ChatMessage[]) {
+  /**
+   * 优先使用火山引擎（ARK）DeepSeek。
+   * 兼容保留 OpenAI 配置做 fallback（如果你未来还想切回去）。
+   */
+  const volcApiKey = process.env.VOLCENGINE_API_KEY;
+  const volcBaseUrl =
+    process.env.VOLCENGINE_BASE_URL || "https://ark.cn-beijing.volces.com/api/v3";
+  const volcModel = process.env.VOLCENGINE_MODEL || "deepseek-v3.2";
+
+  const openaiApiKey = process.env.OPENAI_API_KEY || process.env.CHATGPT_API_KEY;
+  const openaiBaseUrl =
+    process.env.OPENAI_BASE_URL || process.env.CHATGPT_BASE_URL || "https://api.openai.com";
+  const openaiModel =
     process.env.OPENAI_MODEL || process.env.CHATGPT_MODEL || "gpt-4o-mini";
 
-  if (!apiKey) {
+  const provider: "volc" | "openai" = volcApiKey ? "volc" : "openai";
+
+  if (provider === "openai" && !openaiApiKey) {
     throw new Error(
-      "Missing OPENAI_API_KEY (or CHATGPT_API_KEY). Tip: put it in .env.local and restart `yarn dev`.",
+      "Missing VOLCENGINE_API_KEY (recommended) or OPENAI_API_KEY. Tip: put it in .env.local and restart `yarn dev`.",
     );
   }
 
@@ -51,20 +86,27 @@ async function callChatGPT(messages: ChatMessage[]) {
   const cached = aiCache.get(key);
   if (cached && now - cached.ts < AI_CACHE_TTL_MS) return cached.content;
 
-  const url = `${baseUrl.replace(/\/$/, "")}/v1/chat/completions`;
-
   const maxRetries = 3;
   let lastErr: unknown;
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
+      const url =
+        provider === "volc"
+          ? `${volcBaseUrl.replace(/\/$/, "")}/chat/completions`
+          : `${openaiBaseUrl.replace(/\/$/, "")}/v1/chat/completions`;
+
+      const model = provider === "volc" ? volcModel : openaiModel;
+      const apiKey = provider === "volc" ? volcApiKey! : openaiApiKey!;
+
       const { data } = await axios.post(
         url,
         {
           model,
           messages,
           temperature: 0.2,
-          // 某些兼容服务不支持 response_format；如遇到 400 可先注释掉
-          response_format: { type: "json_object" },
+          // 为了兼容火山引擎 / DeepSeek，这里不强依赖 response_format。
+          // 我们通过 system+schema 强约束模型输出 JSON。
         },
         {
           headers: {
@@ -76,7 +118,7 @@ async function callChatGPT(messages: ChatMessage[]) {
       );
 
       const content = data?.choices?.[0]?.message?.content;
-      if (!content) throw new Error("ChatGPT API returned empty content");
+      if (!content) throw new Error("LLM API returned empty content");
       aiCache.set(key, { ts: Date.now(), content });
       return content as string;
     } catch (e: any) {
@@ -94,11 +136,10 @@ async function callChatGPT(messages: ChatMessage[]) {
     }
   }
 
-  // 把更多上下文带出去，方便你定位是 OpenAI 限流还是代理限流
   const e: any = lastErr;
   const status = e?.response?.status;
   const detail = e?.response?.data ? JSON.stringify(e.response.data) : e?.message;
-  throw new Error(`ChatGPT API error${status ? ` (${status})` : ""}: ${detail}`);
+  throw new Error(`LLM API error${status ? ` (${status})` : ""} [${provider}]: ${detail}`);
 }
 
 const app = express();
@@ -205,7 +246,7 @@ app.post("/api/ai/analyze", async (req, res) => {
     const system: ChatMessage = {
       role: "system",
       content:
-        "你是一个严谨的交易分析助手。你只能基于用户提供的行情字段进行分析，不要编造财务数据或新闻。输出必须是 JSON。必须包含风险提示：不构成投资建议。",
+        "你是一个严谨的交易分析助手。你只能基于用户提供的行情字段进行分析，不要编造财务数据或新闻。输出必须是严格 JSON（纯 JSON 字符串），不要输出 Markdown，不要使用 ```json 代码块。必须包含风险提示：不构成投资建议。",
     };
 
     const user: ChatMessage = {
@@ -239,8 +280,8 @@ app.post("/api/ai/analyze", async (req, res) => {
       ),
     };
 
-    const content = await callChatGPT([system, user]);
-    res.json(JSON.parse(content));
+    const content = await callLLM([system, user]);
+    res.json(safeJsonParse(content));
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error("/api/ai/analyze", message);
@@ -259,7 +300,7 @@ app.post("/api/ai/pick", async (req, res) => {
     const system: ChatMessage = {
       role: "system",
       content:
-        "你是一个严谨的选股助手。你只能基于传入的行情字段（价格、涨跌幅、开高低、成交量、持仓盈亏等）进行排序与筛选，不要编造基本面/新闻。输出必须是 JSON。必须包含风险提示：不构成投资建议。",
+        "你是一个严谨的选股助手。你只能基于传入的行情字段（价格、涨跌幅、开高低、成交量、持仓盈亏等）进行排序与筛选，不要编造基本面/新闻。输出必须是严格 JSON（纯 JSON 字符串），不要输出 Markdown，不要使用 ```json 代码块。必须包含风险提示：不构成投资建议。",
     };
 
     const user: ChatMessage = {
@@ -302,8 +343,8 @@ app.post("/api/ai/pick", async (req, res) => {
       ),
     };
 
-    const content = await callChatGPT([system, user]);
-    res.json(JSON.parse(content));
+    const content = await callLLM([system, user]);
+    res.json(safeJsonParse(content));
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error("/api/ai/pick", message);

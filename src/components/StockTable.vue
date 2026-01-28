@@ -158,8 +158,17 @@
             }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" align="center" fixed="right">
+        <el-table-column label="操作" width="210" align="center" fixed="right">
           <template #default="{ row }">
+            <el-button
+              type="success"
+              link
+              size="small"
+              title="AI 分析"
+              @click="emit('aiAnalyze', row)"
+            >
+              AI
+            </el-button>
             <el-button
               type="primary"
               link
@@ -206,6 +215,7 @@ const emit = defineEmits<{
   remove: [code: string];
   setHolding: [row: StockItem];
   setGroup: [row: StockItem];
+  aiAnalyze: [row: StockItem];
 }>();
 
 function rowClassName({ row }: { row: StockItem }) {
