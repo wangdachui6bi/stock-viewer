@@ -25,6 +25,8 @@ export interface StockItem {
   earnings?: number;
   /** 盈亏率 %（本地计算） */
   earningPercent?: number;
+  /** 今日盈亏金额（本地计算） */
+  todayEarnings?: number;
 }
 
 export interface SearchItem {

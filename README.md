@@ -15,7 +15,7 @@
 - 后端代理：Express，解决 CORS 与 GBK/GB18030 解码
 - 接口与解析逻辑参考 leek-fund
 
-## 接口说明（与 leek-fund 一致）
+## 接口说明
 
 | 数据类型     | 来源   | 接口 |
 |-------------|--------|------|
@@ -37,10 +37,6 @@ npm run dev
 
 - 前端请求 `/api/*` 会被 Vite 代理到 `http://localhost:3001`
 - 后端负责请求新浪/腾讯并解码 GBK/GB18030，返回 JSON
-
-### 点击跳源码（开发时）
-
-已接入 `vite-plugin-vue-inspector`：开发模式下按住 **Cmd+Shift**（Mac）或 **Ctrl+Shift**（Win）后点击页面任意元素，会在 Cursor/VS Code 中打开对应的 `.vue` 源码；页面右下角有常显的开关按钮。
 
 ## 构建
 

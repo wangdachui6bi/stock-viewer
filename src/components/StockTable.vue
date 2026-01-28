@@ -133,6 +133,19 @@
           </template>
         </el-table-column>
         <el-table-column
+          label="今日盈亏"
+          width="90"
+          align="right"
+          sortable
+          :sort-method="sortByTodayEarnings"
+        >
+          <template #default="{ row }">
+            <span :class="earnClass(row.todayEarnings)">{{
+              formatEarnings(row.todayEarnings)
+            }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column
           label="收益率"
           width="90"
           align="right"
@@ -145,7 +158,7 @@
             }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" align="center" fixed="right">
+        <el-table-column label="操作" width="160" align="center" fixed="right">
           <template #default="{ row }">
             <el-button
               type="primary"
@@ -155,6 +168,15 @@
               @click="emit('setHolding', row)"
             >
               持仓
+            </el-button>
+            <el-button
+              type="warning"
+              link
+              size="small"
+              title="分组"
+              @click="emit('setGroup', row)"
+            >
+              分组
             </el-button>
             <el-button
               type="danger"
@@ -183,6 +205,7 @@ defineProps<{
 const emit = defineEmits<{
   remove: [code: string];
   setHolding: [row: StockItem];
+  setGroup: [row: StockItem];
 }>();
 
 function rowClassName({ row }: { row: StockItem }) {
@@ -248,6 +271,8 @@ const sortByHeldAmount = (a: StockItem, b: StockItem) =>
   toNumber(a.heldAmount) - toNumber(b.heldAmount);
 const sortByEarnings = (a: StockItem, b: StockItem) =>
   toNumber(a.earnings) - toNumber(b.earnings);
+const sortByTodayEarnings = (a: StockItem, b: StockItem) =>
+  toNumber(a.todayEarnings) - toNumber(b.todayEarnings);
 const sortByEarningPercent = (a: StockItem, b: StockItem) =>
   toNumber(a.earningPercent) - toNumber(b.earningPercent);
 </script>

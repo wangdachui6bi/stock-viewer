@@ -3,9 +3,7 @@
     <header class="header">
       <div class="header-inner">
         <h1 class="title">股票行情</h1>
-        <p class="subtitle">
-          基于 leek-fund 数据 · A股/港股/美股/期货 · PC 端交易助手
-        </p>
+        <p class="subtitle">PC 端交易助手</p>
         <div class="quick-links">
           <a
             href="https://data.eastmoney.com/hsgt/index.html"
@@ -30,6 +28,146 @@
         @search="onSearch"
         @select="onSelectSearchItem"
       />
+      <section class="tools-section">
+        <div class="section-head">
+          <div class="section-title-row">
+            <h2>交易工具</h2>
+            <span class="last-update">持仓 {{ portfolioSummary.holdingCount }} 只</span>
+          </div>
+          <div class="actions">
+            <el-button size="small" @click="requestNotificationPermission">
+              通知权限
+            </el-button>
+          </div>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="summary-label">持仓市值</div>
+            <div class="summary-value">
+              {{ formatMoney(portfolioSummary.currentValue) }}
+            </div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">持仓成本</div>
+            <div class="summary-value">
+              {{ formatMoney(portfolioSummary.totalCost) }}
+            </div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">总盈亏</div>
+            <div
+              class="summary-value"
+              :class="
+                portfolioSummary.totalEarnings > 0
+                  ? 'down'
+                  : portfolioSummary.totalEarnings < 0
+                    ? 'up'
+                    : ''
+              "
+            >
+              {{ formatSigned(portfolioSummary.totalEarnings) }}
+            </div>
+            <div class="summary-sub">
+              {{ formatSigned(portfolioSummary.totalPct, '%') }}
+            </div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">今日盈亏</div>
+            <div
+              class="summary-value"
+              :class="
+                portfolioSummary.todayEarnings > 0
+                  ? 'down'
+                  : portfolioSummary.todayEarnings < 0
+                    ? 'up'
+                    : ''
+              "
+            >
+              {{ formatSigned(portfolioSummary.todayEarnings) }}
+            </div>
+          </div>
+        </div>
+        <div class="alerts-panel">
+          <div class="alerts-form">
+            <el-select
+              v-model="alertForm.code"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择股票 / 输入代码"
+              class="alert-select"
+            >
+              <el-option
+                v-for="item in alertStockOptions"
+                :key="item.code"
+                :label="`${item.name} (${item.code})`"
+                :value="item.code"
+              />
+            </el-select>
+            <el-select v-model="alertForm.type" class="alert-type">
+              <el-option label="价格" value="price" />
+              <el-option label="涨跌幅" value="percent" />
+            </el-select>
+            <el-select v-model="alertForm.operator" class="alert-op">
+              <el-option label="≥" value=">=" />
+              <el-option label="≤" value="<=" />
+            </el-select>
+            <el-input-number
+              v-model="alertForm.value"
+              :step="0.01"
+              :precision="2"
+              class="alert-value"
+            />
+            <el-button type="primary" @click="addAlert">添加提醒</el-button>
+          </div>
+          <div class="alerts-list">
+            <el-empty
+              v-if="!alerts.length"
+              description="暂无提醒，添加后价格触达会通知"
+            />
+            <el-table v-else :data="alerts" size="small" stripe>
+              <el-table-column label="股票" min-width="140">
+                <template #default="{ row }">
+                  <div class="alert-name">
+                    <span>{{ row.name || row.code }}</span>
+                    <span class="muted">({{ row.code }})</span>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="条件" min-width="150">
+                <template #default="{ row }">
+                  {{ formatAlertCondition(row) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="上次触发" width="110">
+                <template #default="{ row }">
+                  {{ formatAlertLastTime(row.lastTriggered) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="90">
+                <template #default="{ row }">
+                  <el-switch
+                    v-model="row.enabled"
+                    @change="toggleAlert(row, $event)"
+                  />
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="80">
+                <template #default="{ row }">
+                  <el-button
+                    link
+                    type="danger"
+                    size="small"
+                    @click="removeAlert(row.id)"
+                  >
+                    删除
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+      </section>
       <section class="watchlist-section">
         <div class="section-head">
           <div class="section-title-row">
@@ -42,7 +180,26 @@
             </span>
           </div>
           <div class="actions">
-            <el-tooltip :content="`开启后每 ${realtimeInterval} 秒自动刷新行情`" placement="bottom">
+            <el-select
+              v-model="currentGroupId"
+              size="small"
+              class="group-select"
+            >
+              <el-option :value="ALL_GROUP_ID" label="全部分组" />
+              <el-option
+                v-for="group in groups"
+                :key="group.id"
+                :label="group.name"
+                :value="group.id"
+              />
+            </el-select>
+            <el-button size="small" @click="groupManageModal = true">
+              管理分组
+            </el-button>
+            <el-tooltip
+              :content="`开启后每 ${realtimeInterval} 秒自动刷新行情`"
+              placement="bottom"
+            >
               <div class="realtime-wrap">
                 <span class="realtime-label">实时</span>
                 <el-switch
@@ -71,6 +228,7 @@
           :loading="loading"
           @remove="removeCode"
           @set-holding="openHoldingModal"
+          @set-group="openGroupAssign"
         />
       </section>
     </main>
@@ -120,11 +278,65 @@
         <el-button type="primary" @click="saveHolding">保存</el-button>
       </template>
     </el-dialog>
+    <el-dialog
+      v-model="groupManageModal"
+      title="分组管理"
+      width="420px"
+    >
+      <div class="group-manage">
+        <div class="group-create">
+          <el-input v-model="newGroupName" placeholder="输入分组名称" />
+          <el-button type="primary" @click="addGroup">新增</el-button>
+        </div>
+        <div class="group-list">
+          <div v-for="group in groups" :key="group.id" class="group-item">
+            <el-input v-model="groupDrafts[group.id]" />
+            <div class="group-actions">
+              <el-button size="small" @click="renameGroup(group.id)"
+                >保存</el-button
+              >
+              <el-button
+                size="small"
+                type="danger"
+                :disabled="groups.length <= 1"
+                @click="removeGroup(group.id)"
+              >
+                删除
+              </el-button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+    <el-dialog
+      v-model="groupAssignModal"
+      :title="`调整分组 · ${groupAssignStock?.name ?? ''} (${groupAssignStock?.code ?? ''})`"
+      width="380px"
+      @close="closeGroupAssign"
+    >
+      <el-form label-position="top">
+        <el-form-item label="选择分组">
+          <el-select v-model="groupAssignId" style="width: 100%">
+            <el-option
+              v-for="group in groups"
+              :key="group.id"
+              :label="group.name"
+              :value="group.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="closeGroupAssign">取消</el-button>
+        <el-button type="primary" @click="applyGroupAssign">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, computed } from "vue";
+import { ElMessage } from "element-plus";
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 import StockSearch from "./components/StockSearch.vue";
 import StockTable from "./components/StockTable.vue";
@@ -137,17 +349,52 @@ import type {
 } from "./types/stock";
 import { SORT_LABELS } from "./types/stock";
 
+type StockGroup = {
+  id: string;
+  name: string;
+  codes: string[];
+};
+
+type AlertRule = {
+  id: string;
+  code: string;
+  name?: string;
+  type: "price" | "percent";
+  operator: ">=" | "<=";
+  value: number;
+  enabled: boolean;
+  lastTriggered?: number;
+};
+
 const STORAGE_KEY = "vue-stock-viewer-codes";
+const STORAGE_GROUP_KEY = "vue-stock-viewer-groups";
 const STORAGE_PRICE_KEY = "vue-stock-viewer-stockPrice";
+const STORAGE_ALERT_KEY = "vue-stock-viewer-alerts";
+const ALL_GROUP_ID = "__all__";
+const ALERT_COOLDOWN = 3 * 60 * 1000;
 
 const searchKeyword = ref("");
 const searchLoading = ref(false);
 const searchSuggestions = ref<SearchItem[]>([]);
 const stockList = ref<StockItem[]>([]);
-const codes = ref<string[]>([]);
+const groups = ref<StockGroup[]>([]);
+const currentGroupId = ref<string>(ALL_GROUP_ID);
 const loading = ref(false);
 const sortType = ref<SortType>(0);
 const stockPrice = ref<Record<string, StockPriceItem>>({});
+const alerts = ref<AlertRule[]>([]);
+const alertForm = ref({
+  code: "",
+  type: "price" as AlertRule["type"],
+  operator: ">=" as AlertRule["operator"],
+  value: 0,
+});
+const groupManageModal = ref(false);
+const newGroupName = ref("");
+const groupDrafts = ref<Record<string, string>>({});
+const groupAssignModal = ref(false);
+const groupAssignStock = ref<StockItem | null>(null);
+const groupAssignId = ref<string>("");
 const holdingModal = ref(false);
 const holdingStock = ref<StockItem | null>(null);
 const holdingForm = ref({
@@ -161,13 +408,49 @@ const realtimeInterval = ref(1.5); // 单位：秒
 let realtimeTimer: ReturnType<typeof setInterval> | null = null;
 const lastUpdateTime = ref<number | null>(null);
 
-function loadCodes() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    codes.value = raw ? JSON.parse(raw) : [];
-  } catch {
-    codes.value = [];
+function createGroupId() {
+  return `g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function ensureDefaultGroup() {
+  if (!groups.value.length) {
+    groups.value = [
+      {
+        id: createGroupId(),
+        name: "自选",
+        codes: [],
+      },
+    ];
   }
+}
+
+function loadGroups() {
+  try {
+    const raw = localStorage.getItem(STORAGE_GROUP_KEY);
+    if (raw) {
+      groups.value = JSON.parse(raw);
+      ensureDefaultGroup();
+      return;
+    }
+  } catch {
+    groups.value = [];
+  }
+  // 兼容旧版本 codes 存储
+  try {
+    const legacyRaw = localStorage.getItem(STORAGE_KEY);
+    const legacyCodes = legacyRaw ? JSON.parse(legacyRaw) : [];
+    groups.value = [
+      {
+        id: createGroupId(),
+        name: "自选",
+        codes: Array.isArray(legacyCodes) ? legacyCodes : [],
+      },
+    ];
+  } catch {
+    groups.value = [];
+  }
+  ensureDefaultGroup();
+  saveGroups();
 }
 
 function loadStockPrice() {
@@ -179,12 +462,25 @@ function loadStockPrice() {
   }
 }
 
-function saveCodes() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(codes.value));
+function loadAlerts() {
+  try {
+    const raw = localStorage.getItem(STORAGE_ALERT_KEY);
+    alerts.value = raw ? JSON.parse(raw) : [];
+  } catch {
+    alerts.value = [];
+  }
+}
+
+function saveGroups() {
+  localStorage.setItem(STORAGE_GROUP_KEY, JSON.stringify(groups.value));
 }
 
 function saveStockPrice() {
   localStorage.setItem(STORAGE_PRICE_KEY, JSON.stringify(stockPrice.value));
+}
+
+function saveAlerts() {
+  localStorage.setItem(STORAGE_ALERT_KEY, JSON.stringify(alerts.value));
 }
 
 function mergeHeldAndEarnings(list: StockItem[]): StockItem[] {
@@ -198,11 +494,15 @@ function mergeHeldAndEarnings(list: StockItem[]): StockItem[] {
     const priceNum = parseFloat(row.price || "0") || 0;
     let earnings = 0;
     let earningPercent: number | undefined;
+    let todayEarnings: number | undefined;
     if (amount > 0 && unitPrice > 0 && !isSellOut) {
       const cost = amount * unitPrice;
       const current = amount * priceNum;
       earnings = current - cost;
       earningPercent = cost ? (earnings / cost) * 100 : 0;
+    }
+    if (amount > 0 && todayUnitPrice > 0 && !isSellOut) {
+      todayEarnings = amount * (priceNum - todayUnitPrice);
     }
     return {
       ...row,
@@ -212,6 +512,7 @@ function mergeHeldAndEarnings(list: StockItem[]): StockItem[] {
       isSellOut,
       earnings,
       earningPercent,
+      todayEarnings,
     };
   });
 }
@@ -232,9 +533,63 @@ function parsePercent(p: string): number {
   return parseFloat(String(p).replace("+", "")) || 0;
 }
 
+const allCodes = computed(() => {
+  const set = new Set<string>();
+  groups.value.forEach((group) => {
+    group.codes.forEach((code) => set.add(code.toLowerCase()));
+  });
+  return [...set];
+});
+
+const currentGroupCodes = computed(() => {
+  if (currentGroupId.value === ALL_GROUP_ID) return allCodes.value;
+  const group = groups.value.find((item) => item.id === currentGroupId.value);
+  return group ? group.codes.map((c) => c.toLowerCase()) : [];
+});
+
 const displayList = computed(() => {
   const merged = mergeHeldAndEarnings(stockList.value);
-  return sortList(merged);
+  if (currentGroupId.value === ALL_GROUP_ID) return sortList(merged);
+  const codeSet = new Set(currentGroupCodes.value.map((c) => c.toLowerCase()));
+  return sortList(merged.filter((row) => codeSet.has(row.code.toLowerCase())));
+});
+
+const alertStockOptions = computed(() =>
+  stockList.value.map((item) => ({
+    code: item.code,
+    name: item.name,
+  })),
+);
+
+const portfolioSummary = computed(() => {
+  const list = mergeHeldAndEarnings(stockList.value);
+  let totalCost = 0;
+  let currentValue = 0;
+  let todayCost = 0;
+  let holdingCount = 0;
+  list.forEach((row) => {
+    if (!row.heldAmount || row.heldAmount <= 0 || row.isSellOut) return;
+    const amount = row.heldAmount;
+    const price = parseFloat(row.price || "0") || 0;
+    const cost = amount * (row.heldPrice || 0);
+    totalCost += cost;
+    currentValue += amount * price;
+    holdingCount += 1;
+    if (row.todayHeldPrice && row.todayHeldPrice > 0) {
+      todayCost += amount * row.todayHeldPrice;
+    }
+  });
+  const totalEarnings = currentValue - totalCost;
+  const totalPct = totalCost ? (totalEarnings / totalCost) * 100 : 0;
+  const todayEarnings = todayCost ? currentValue - todayCost : 0;
+  return {
+    totalCost,
+    currentValue,
+    totalEarnings,
+    totalPct,
+    todayEarnings,
+    holdingCount,
+  };
 });
 
 function cycleSort() {
@@ -243,9 +598,202 @@ function cycleSort() {
   else sortType.value = 0;
 }
 
+function formatMoney(v: number) {
+  return new Intl.NumberFormat("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(v || 0);
+}
+
+function formatSigned(v: number, suffix = "") {
+  if (!v) return `0${suffix}`;
+  const sign = v > 0 ? "+" : "";
+  return `${sign}${formatMoney(v)}${suffix}`;
+}
+
 function formatTime(ts: number) {
   const d = new Date(ts);
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}:${d.getSeconds().toString().padStart(2, "0")}`;
+}
+
+function formatAlertCondition(alert: AlertRule) {
+  const label = alert.type === "price" ? "价格" : "涨跌幅";
+  const value =
+    alert.type === "price" ? formatMoney(alert.value) : `${alert.value}%`;
+  return `${label} ${alert.operator} ${value}`;
+}
+
+function formatAlertLastTime(ts?: number) {
+  if (!ts) return "—";
+  return formatTime(ts);
+}
+
+function updateGroupDrafts() {
+  const next: Record<string, string> = {};
+  groups.value.forEach((group) => {
+    next[group.id] = group.name;
+  });
+  groupDrafts.value = next;
+}
+
+function addGroup() {
+  const name = newGroupName.value.trim();
+  if (!name) return;
+  groups.value = [...groups.value, { id: createGroupId(), name, codes: [] }];
+  newGroupName.value = "";
+  saveGroups();
+  updateGroupDrafts();
+}
+
+function renameGroup(groupId: string) {
+  const name = (groupDrafts.value[groupId] || "").trim();
+  if (!name) return;
+  groups.value = groups.value.map((group) =>
+    group.id === groupId ? { ...group, name } : group,
+  );
+  saveGroups();
+}
+
+function removeGroup(groupId: string) {
+  if (groups.value.length <= 1) return;
+  groups.value = groups.value.filter((group) => group.id !== groupId);
+  if (currentGroupId.value === groupId) {
+    currentGroupId.value = ALL_GROUP_ID;
+  }
+  saveGroups();
+  updateGroupDrafts();
+}
+
+function openGroupAssign(row: StockItem) {
+  groupAssignStock.value = row;
+  const owned = groups.value.find((group) =>
+    group.codes.some((c) => c.toLowerCase() === row.code.toLowerCase()),
+  );
+  groupAssignId.value = owned?.id || groups.value[0]?.id || "";
+  groupAssignModal.value = true;
+}
+
+function applyGroupAssign() {
+  if (!groupAssignStock.value || !groupAssignId.value) return;
+  const code = groupAssignStock.value.code.toLowerCase();
+  groups.value = groups.value.map((group) => {
+    const without = group.codes.filter((c) => c.toLowerCase() !== code);
+    if (group.id === groupAssignId.value) {
+      return { ...group, codes: [...without, code] };
+    }
+    return { ...group, codes: without };
+  });
+  saveGroups();
+  groupAssignModal.value = false;
+  groupAssignStock.value = null;
+}
+
+function closeGroupAssign() {
+  groupAssignModal.value = false;
+  groupAssignStock.value = null;
+}
+
+function requestNotificationPermission() {
+  if (!("Notification" in window)) {
+    ElMessage.warning("浏览器不支持桌面通知");
+    return;
+  }
+  if (Notification.permission === "granted") {
+    ElMessage.success("通知权限已开启");
+    return;
+  }
+  Notification.requestPermission().then((result) => {
+    if (result === "granted") ElMessage.success("已开启通知权限");
+    else ElMessage.info("通知权限未开启");
+  });
+}
+
+function addAlert() {
+  const code = alertForm.value.code.trim();
+  if (!code) return;
+  const value = Number(alertForm.value.value);
+  if (!Number.isFinite(value)) return;
+  const exists = alerts.value.some(
+    (item) =>
+      item.code.toLowerCase() === code.toLowerCase() &&
+      item.type === alertForm.value.type &&
+      item.operator === alertForm.value.operator &&
+      item.value === value,
+  );
+  if (exists) return;
+  const name =
+    stockList.value.find((item) => item.code.toLowerCase() === code.toLowerCase())
+      ?.name || "";
+  alerts.value = [
+    ...alerts.value,
+    {
+      id: `a_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      code,
+      name,
+      type: alertForm.value.type,
+      operator: alertForm.value.operator,
+      value,
+      enabled: true,
+    },
+  ];
+  saveAlerts();
+  alertForm.value = {
+    code: "",
+    type: "price",
+    operator: ">=",
+    value: 0,
+  };
+}
+
+function removeAlert(id: string) {
+  alerts.value = alerts.value.filter((item) => item.id !== id);
+  saveAlerts();
+}
+
+function toggleAlert(alert: AlertRule, enabled: boolean) {
+  alerts.value = alerts.value.map((item) =>
+    item.id === alert.id ? { ...item, enabled } : item,
+  );
+  saveAlerts();
+}
+
+function checkAlertCondition(alert: AlertRule, row: StockItem) {
+  if (alert.type === "price") {
+    const price = parseFloat(row.price || "0") || 0;
+    return alert.operator === ">=" ? price >= alert.value : price <= alert.value;
+  }
+  const pct = parsePercent(row.percent || "0");
+  return alert.operator === ">=" ? pct >= alert.value : pct <= alert.value;
+}
+
+function notifyAlert(alert: AlertRule, row: StockItem) {
+  const title = `${row.name || alert.name || row.code}`;
+  const body = `${formatAlertCondition(alert)}，当前 ${
+    alert.type === "price" ? row.price || "—" : row.percent || "—"
+  }`;
+  ElMessage.success(body);
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(title, { body });
+  }
+}
+
+function checkAlerts(list: StockItem[]) {
+  if (!alerts.value.length) return;
+  const now = Date.now();
+  const map = new Map(list.map((row) => [row.code.toLowerCase(), row]));
+  let touched = false;
+  alerts.value = alerts.value.map((alert) => {
+    if (!alert.enabled) return alert;
+    const row = map.get(alert.code.toLowerCase());
+    if (!row) return alert;
+    const last = alert.lastTriggered || 0;
+    if (last && now - last < ALERT_COOLDOWN) return alert;
+    if (!checkAlertCondition(alert, row)) return alert;
+    touched = true;
+    notifyAlert(alert, row);
+    return { ...alert, lastTriggered: now };
+  });
+  if (touched) saveAlerts();
 }
 
 watch(realtimeMode, (on) => {
@@ -261,14 +809,15 @@ watch(realtimeMode, (on) => {
 });
 
 async function loadStockList(options?: { background?: boolean }) {
-  if (!codes.value.length) {
+  if (!allCodes.value.length) {
     stockList.value = [];
     return;
   }
   if (!options?.background) loading.value = true;
   try {
-    stockList.value = await fetchStockList(codes.value);
+    stockList.value = await fetchStockList(allCodes.value);
     lastUpdateTime.value = Date.now();
+    checkAlerts(stockList.value);
   } catch (e) {
     console.error(e);
     if (!options?.background) stockList.value = [];
@@ -282,10 +831,12 @@ function refreshList() {
 }
 
 function removeCode(code: string) {
-  codes.value = codes.value.filter(
-    (c) => c.toLowerCase() !== code.toLowerCase(),
-  );
-  saveCodes();
+  const lower = code.toLowerCase();
+  groups.value = groups.value.map((group) => ({
+    ...group,
+    codes: group.codes.filter((c) => c.toLowerCase() !== lower),
+  }));
+  saveGroups();
   const key = code.toLowerCase();
   if (stockPrice.value[key]) {
     delete stockPrice.value[key];
@@ -296,9 +847,18 @@ function removeCode(code: string) {
 
 function addCode(code: string) {
   const lower = code.toLowerCase();
-  if (codes.value.some((c) => c.toLowerCase() === lower)) return;
-  codes.value = [...codes.value, lower];
-  saveCodes();
+  if (allCodes.value.some((c) => c.toLowerCase() === lower)) return;
+  ensureDefaultGroup();
+  let targetGroup = groups.value.find((g) => g.id === currentGroupId.value);
+  if (!targetGroup || currentGroupId.value === ALL_GROUP_ID) {
+    targetGroup = groups.value[0];
+  }
+  groups.value = groups.value.map((group) =>
+    group.id === targetGroup?.id
+      ? { ...group, codes: [...group.codes, lower] }
+      : group,
+  );
+  saveGroups();
   loadStockList();
 }
 
@@ -360,7 +920,10 @@ function onSelectSearchItem(item: SearchItem) {
   searchSuggestions.value = [];
 }
 
-watch(codes, () => loadStockList(), { immediate: false });
+watch(allCodes, () => loadStockList(), { immediate: false });
+watch(groupManageModal, (open) => {
+  if (open) updateGroupDrafts();
+});
 watch(searchKeyword, (q) => {
   if (searchTimer) clearTimeout(searchTimer);
   if (!q.trim()) {
@@ -370,8 +933,10 @@ watch(searchKeyword, (q) => {
   searchTimer = setTimeout(() => onSearch(), 300);
 });
 onMounted(() => {
-  loadCodes();
+  loadGroups();
   loadStockPrice();
+  loadAlerts();
+  updateGroupDrafts();
   loadStockList();
 });
 onUnmounted(() => {
@@ -440,6 +1005,13 @@ onUnmounted(() => {
 .watchlist-section:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
+.tools-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
 .section-head {
   display: flex;
   justify-content: space-between;
@@ -473,5 +1045,95 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.summary-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+}
+.summary-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+.summary-value {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.summary-sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+.alerts-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.alerts-form {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) 110px 70px 140px auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+.alert-select,
+.alert-type,
+.alert-op,
+.alert-value {
+  width: 100%;
+}
+.alerts-list :deep(.el-table) {
+  --el-table-bg-color: var(--bg-card);
+  --el-table-header-bg-color: var(--bg-card);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.04);
+  --el-table-border-color: var(--border);
+  --el-table-text-color: var(--text);
+}
+.alert-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.group-select {
+  min-width: 120px;
+}
+.group-manage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.group-create {
+  display: flex;
+  gap: 0.5rem;
+}
+.group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.group-item {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.group-actions {
+  display: inline-flex;
+  gap: 0.35rem;
+}
+.muted {
+  color: var(--text-muted);
+}
+.up {
+  color: var(--up);
+}
+.down {
+  color: var(--down);
 }
 </style>
