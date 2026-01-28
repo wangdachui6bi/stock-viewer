@@ -3,10 +3,22 @@
     <header class="header">
       <div class="header-inner">
         <h1 class="title">股票行情</h1>
-        <p class="subtitle">基于 leek-fund 数据 · A股/港股/美股/期货 · PC 端交易助手</p>
+        <p class="subtitle">
+          基于 leek-fund 数据 · A股/港股/美股/期货 · PC 端交易助手
+        </p>
         <div class="quick-links">
-          <a href="https://data.eastmoney.com/hsgt/index.html" target="_blank" rel="noopener">北向资金</a>
-          <a href="https://data.eastmoney.com/zjlx/detail.html" target="_blank" rel="noopener">主力资金</a>
+          <a
+            href="https://data.eastmoney.com/hsgt/index.html"
+            target="_blank"
+            rel="noopener"
+            >北向资金</a
+          >
+          <a
+            href="https://data.eastmoney.com/zjlx/detail.html"
+            target="_blank"
+            rel="noopener"
+            >主力资金</a
+          >
         </div>
       </div>
     </header>
@@ -20,18 +32,38 @@
       />
       <section class="watchlist-section">
         <div class="section-head">
-          <h2>自选列表</h2>
-          <div class="actions">
-            <button class="btn btn-ghost" :class="{ active: sortType !== 0 }" @click="cycleSort">
-              {{ SORT_LABELS[sortType] }}
-            </button>
-            <button
-              class="btn btn-ghost"
-              :disabled="loading"
-              @click="refreshList"
+          <div class="section-title-row">
+            <h2>自选列表</h2>
+            <span
+              v-if="lastUpdateTime && displayList.length"
+              class="last-update"
             >
+              更新于 {{ formatTime(lastUpdateTime) }}
+            </span>
+          </div>
+          <div class="actions">
+            <el-tooltip :content="`开启后每 ${realtimeInterval} 秒自动刷新行情`" placement="bottom">
+              <div class="realtime-wrap">
+                <span class="realtime-label">实时</span>
+                <el-switch
+                  v-model="realtimeMode"
+                  size="default"
+                  inline-prompt
+                  :active-text="`${realtimeInterval}s`"
+                  inactive-text="关"
+                />
+              </div>
+            </el-tooltip>
+            <el-button
+              :type="sortType !== 0 ? 'primary' : 'default'"
+              plain
+              @click="cycleSort"
+            >
+              {{ SORT_LABELS[sortType] }}
+            </el-button>
+            <el-button :loading="loading" @click="refreshList">
               {{ loading ? "刷新中…" : "刷新" }}
-            </button>
+            </el-button>
           </div>
         </div>
         <StockTable
@@ -42,50 +74,67 @@
         />
       </section>
     </main>
-    <Teleport to="body">
-      <div v-if="holdingModal" class="modal-backdrop" @click.self="closeHoldingModal">
-        <div class="modal holding-modal">
-          <div class="modal-head">
-            <h3>持仓设置 · {{ holdingStock?.name }} ({{ holdingStock?.code }})</h3>
-            <button class="btn-close" @click="closeHoldingModal">×</button>
-          </div>
-          <div class="modal-body">
-            <div class="form-row">
-              <label>持仓股数</label>
-              <input v-model.number="holdingForm.amount" type="number" min="0" step="1" />
-            </div>
-            <div class="form-row">
-              <label>持仓成本价</label>
-              <input v-model.number="holdingForm.unitPrice" type="number" min="0" step="0.01" />
-            </div>
-            <div class="form-row">
-              <label>今日成本价</label>
-              <input v-model.number="holdingForm.todayUnitPrice" type="number" min="0" step="0.01" />
-            </div>
-            <div class="form-row checkbox-row">
-              <label>
-                <input v-model="holdingForm.isSellOut" type="checkbox" />
-                已清仓
-              </label>
-            </div>
-          </div>
-          <div class="modal-foot">
-            <button class="btn btn-ghost" @click="closeHoldingModal">取消</button>
-            <button class="btn btn-primary" @click="saveHolding">保存</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <el-dialog
+      v-model="holdingModal"
+      :title="`持仓设置 · ${holdingStock?.name ?? ''} (${holdingStock?.code ?? ''})`"
+      width="420px"
+      destroy-on-close
+      @close="closeHoldingModal"
+    >
+      <el-form label-position="top">
+        <el-form-item label="持仓股数">
+          <el-input-number
+            v-model="holdingForm.amount"
+            :min="0"
+            :step="1"
+            controls-position="right"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="持仓成本价">
+          <el-input-number
+            v-model="holdingForm.unitPrice"
+            :min="0"
+            :step="0.01"
+            :precision="2"
+            controls-position="right"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="今日成本价">
+          <el-input-number
+            v-model="holdingForm.todayUnitPrice"
+            :min="0"
+            :step="0.01"
+            :precision="2"
+            controls-position="right"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-checkbox v-model="holdingForm.isSellOut">已清仓</el-checkbox>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="closeHoldingModal">取消</el-button>
+        <el-button type="primary" @click="saveHolding">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, computed } from "vue";
+import { ref, watch, onMounted, onUnmounted, computed } from "vue";
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 import StockSearch from "./components/StockSearch.vue";
 import StockTable from "./components/StockTable.vue";
 import { fetchStockList, searchStock, searchItemToCode } from "./api/stock";
-import type { StockItem, SearchItem, StockPriceItem, SortType } from "./types/stock";
+import type {
+  StockItem,
+  SearchItem,
+  StockPriceItem,
+  SortType,
+} from "./types/stock";
 import { SORT_LABELS } from "./types/stock";
 
 const STORAGE_KEY = "vue-stock-viewer-codes";
@@ -107,6 +156,10 @@ const holdingForm = ref({
   todayUnitPrice: 0,
   isSellOut: false,
 });
+const realtimeMode = ref(false);
+const realtimeInterval = ref(1.5); // 单位：秒
+let realtimeTimer: ReturnType<typeof setInterval> | null = null;
+const lastUpdateTime = ref<number | null>(null);
 
 function loadCodes() {
   try {
@@ -190,19 +243,37 @@ function cycleSort() {
   else sortType.value = 0;
 }
 
-async function loadStockList() {
+function formatTime(ts: number) {
+  const d = new Date(ts);
+  return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}:${d.getSeconds().toString().padStart(2, "0")}`;
+}
+
+watch(realtimeMode, (on) => {
+  if (realtimeTimer) {
+    clearInterval(realtimeTimer);
+    realtimeTimer = null;
+  }
+  if (on) {
+    realtimeTimer = setInterval(() => {
+      loadStockList({ background: true });
+    }, realtimeInterval.value * 1000);
+  }
+});
+
+async function loadStockList(options?: { background?: boolean }) {
   if (!codes.value.length) {
     stockList.value = [];
     return;
   }
-  loading.value = true;
+  if (!options?.background) loading.value = true;
   try {
     stockList.value = await fetchStockList(codes.value);
+    lastUpdateTime.value = Date.now();
   } catch (e) {
     console.error(e);
-    stockList.value = [];
+    if (!options?.background) stockList.value = [];
   } finally {
-    loading.value = false;
+    if (!options?.background) loading.value = false;
   }
 }
 
@@ -303,6 +374,12 @@ onMounted(() => {
   loadStockPrice();
   loadStockList();
 });
+onUnmounted(() => {
+  if (realtimeTimer) {
+    clearInterval(realtimeTimer);
+    realtimeTimer = null;
+  }
+});
 </script>
 
 <style scoped>
@@ -312,6 +389,8 @@ onMounted(() => {
 }
 .header {
   margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
 }
 .header-inner {
   display: flex;
@@ -339,8 +418,10 @@ onMounted(() => {
   color: var(--accent);
   text-decoration: none;
   font-size: 0.875rem;
+  transition: opacity 0.2s ease;
 }
 .quick-links a:hover {
+  opacity: 0.85;
   text-decoration: underline;
 }
 .main {
@@ -353,6 +434,11 @@ onMounted(() => {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1.25rem 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: box-shadow 0.2s ease;
+}
+.watchlist-section:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 .section-head {
   display: flex;
@@ -360,127 +446,32 @@ onMounted(() => {
   align-items: center;
   margin-bottom: 1rem;
 }
+.section-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
 .section-head h2 {
   font-size: 1rem;
   font-weight: 600;
   margin: 0;
 }
+.last-update {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.realtime-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.realtime-label {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
 .actions {
   display: flex;
-  gap: 0.5rem;
-}
-.btn {
-  padding: 0.4rem 0.75rem;
-  border-radius: 6px;
-  cursor: pointer;
-  border: none;
-  font-weight: 500;
-  font-size: 0.875rem;
-}
-.btn-ghost {
-  background: transparent;
-  color: var(--text-muted);
-}
-.btn-ghost:hover:not(:disabled),
-.btn-ghost.active {
-  background: var(--border);
-  color: var(--text);
-}
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.btn-primary {
-  background: var(--accent);
-  color: #fff;
-}
-.btn-primary:hover {
-  filter: brightness(1.1);
-}
-
-/* Modal */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 1rem;
-}
-.modal {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  min-width: 320px;
-  max-width: 420px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-}
-.modal-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--border);
-}
-.modal-head h3 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-}
-.btn-close {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 1.5rem;
-  cursor: pointer;
-  line-height: 1;
-  padding: 0 0.25rem;
-}
-.btn-close:hover {
-  color: var(--text);
-}
-.modal-body {
-  padding: 1.25rem;
-}
-.form-row {
-  margin-bottom: 1rem;
-}
-.form-row label {
-  display: block;
-  margin-bottom: 0.35rem;
-  font-size: 0.875rem;
-  color: var(--text-muted);
-}
-.form-row input[type="number"] {
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  font-size: 0.875rem;
-}
-.form-row input[type="number"]:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-.checkbox-row label {
-  display: flex;
   align-items: center;
   gap: 0.5rem;
-  cursor: pointer;
-}
-.checkbox-row input[type="checkbox"] {
-  width: 1rem;
-  height: 1rem;
-}
-.modal-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  padding: 1rem 1.25rem;
-  border-top: 1px solid var(--border);
 }
 </style>

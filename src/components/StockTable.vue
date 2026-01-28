@@ -1,82 +1,173 @@
 <template>
-  <div class="table-wrap">
-    <div v-if="loading && !list.length" class="loading">加载中…</div>
-    <div v-else-if="!list.length" class="empty">
-      暂无自选，请在上方搜索并添加（支持 A股/港股/美股/期货）
-    </div>
-    <div v-else class="table-scroll">
-      <table class="stock-table">
-        <thead>
-          <tr>
-            <th class="name-col">名称</th>
-            <th class="code-col">代码</th>
-            <th class="market-col">市场</th>
-            <th>最新价</th>
-            <th>涨跌幅</th>
-            <th>涨跌额</th>
-            <th>今开</th>
-            <th>最高</th>
-            <th>最低</th>
-            <th class="vol-col">成交量</th>
-            <th class="hold-col">持仓</th>
-            <th class="earn-col">盈亏</th>
-            <th class="earn-pct-col">收益率</th>
-            <th class="th-action">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="row in list"
-            :key="row.code"
-            class="row"
-            :class="{ 'is-sell-out': row.isSellOut }"
-          >
-            <td class="name-col">{{ row.name }}</td>
-            <td class="code-col">{{ row.code }}</td>
-            <td class="market-col">{{ marketLabel(row.type) }}</td>
-            <td class="price">{{ row.price ?? "—" }}</td>
-            <td :class="['percent', percentClass(row.percent)]">
-              {{ row.percent || "—" }}
-            </td>
-            <td :class="['updown', percentClass(row.percent)]">
-              {{ row.updown ?? "—" }}
-            </td>
-            <td class="num">{{ row.open ?? "—" }}</td>
-            <td class="num">{{ row.high ?? "—" }}</td>
-            <td class="num">{{ row.low ?? "—" }}</td>
-            <td class="vol-col">{{ row.volume ?? "—" }}</td>
-            <td class="hold-col">
-              <template v-if="row.heldAmount != null && row.heldAmount > 0 && !row.isSellOut">
-                {{ row.heldAmount }}股 / {{ row.heldPrice ?? "—" }}
-              </template>
-              <span v-else-if="row.isSellOut" class="muted">已清仓</span>
-              <span v-else class="muted">—</span>
-            </td>
-            <td :class="['earn-col', earnClass(row.earnings)]">
-              {{ formatEarnings(row.earnings) }}
-            </td>
-            <td :class="['earn-pct-col', earnClass(row.earningPercent)]">
-              {{ formatEarnPct(row.earningPercent) }}
-            </td>
-            <td class="action-col">
-              <button
-                class="btn-cell btn-holding"
-                title="设置持仓"
-                @click="emit('setHolding', row)"
-              >
-                持仓
-              </button>
-              <button
-                class="btn-cell btn-remove"
-                title="移除"
-                @click="emit('remove', row.code)"
-              >
-                ×
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+  <div class="table-wrap" v-loading="loading && !list.length">
+    <el-empty
+      v-if="!loading && !list.length"
+      description="暂无自选，请在上方搜索并添加（支持 A股/港股/美股/期货）"
+    />
+    <div v-else-if="list.length" class="table-scroll">
+      <el-table
+        :data="list"
+        stripe
+        style="width: 100%"
+        :row-class-name="rowClassName"
+        class="stock-table"
+        :header-cell-style="{ background: 'var(--bg-card)' }"
+        highlight-current-row
+      >
+        <el-table-column
+          prop="name"
+          label="名称"
+          min-width="120"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <span>{{ row.name }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="code" label="代码" width="100" />
+        <el-table-column label="市场" width="70">
+          <template #default="{ row }">{{ marketLabel(row.type) }}</template>
+        </el-table-column>
+        <el-table-column
+          label="最新价"
+          width="85"
+          align="right"
+          sortable
+          :sort-method="sortByPrice"
+        >
+          <template #default="{ row }">{{ row.price ?? "—" }}</template>
+        </el-table-column>
+        <el-table-column
+          label="涨跌幅"
+          width="85"
+          align="right"
+          sortable
+          :sort-method="sortByPercent"
+        >
+          <template #default="{ row }">
+            <span :class="percentClass(row.percent)">{{
+              row.percent ?? "—"
+            }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="涨跌额"
+          width="85"
+          align="right"
+          sortable
+          :sort-method="sortByUpdown"
+        >
+          <template #default="{ row }">
+            <span :class="percentClass(row.percent)">{{
+              row.updown ?? "—"
+            }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="今开"
+          width="80"
+          align="right"
+          sortable
+          :sort-method="sortByOpen"
+        >
+          <template #default="{ row }">{{ row.open ?? "—" }}</template>
+        </el-table-column>
+        <el-table-column
+          label="最高"
+          width="80"
+          align="right"
+          sortable
+          :sort-method="sortByHigh"
+        >
+          <template #default="{ row }">{{ row.high ?? "—" }}</template>
+        </el-table-column>
+        <el-table-column
+          label="最低"
+          width="80"
+          align="right"
+          sortable
+          :sort-method="sortByLow"
+        >
+          <template #default="{ row }">{{ row.low ?? "—" }}</template>
+        </el-table-column>
+        <el-table-column
+          label="成交量"
+          width="90"
+          align="right"
+          show-overflow-tooltip
+          sortable
+          :sort-method="sortByVolume"
+        >
+          <template #default="{ row }">{{ row.volume ?? "—" }}</template>
+        </el-table-column>
+        <el-table-column
+          label="持仓"
+          min-width="110"
+          align="right"
+          sortable
+          :sort-method="sortByHeldAmount"
+        >
+          <template #default="{ row }">
+            <template
+              v-if="
+                row.heldAmount != null && row.heldAmount > 0 && !row.isSellOut
+              "
+            >
+              {{ row.heldAmount }}股 / {{ row.heldPrice ?? "—" }}
+            </template>
+            <span v-else-if="row.isSellOut" class="muted">已清仓</span>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="盈亏"
+          width="90"
+          align="right"
+          sortable
+          :sort-method="sortByEarnings"
+        >
+          <template #default="{ row }">
+            <span :class="earnClass(row.earnings)">{{
+              formatEarnings(row.earnings)
+            }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="收益率"
+          width="90"
+          align="right"
+          sortable
+          :sort-method="sortByEarningPercent"
+        >
+          <template #default="{ row }">
+            <span :class="earnClass(row.earningPercent)">{{
+              formatEarnPct(row.earningPercent)
+            }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="120" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              type="primary"
+              link
+              size="small"
+              title="设置持仓"
+              @click="emit('setHolding', row)"
+            >
+              持仓
+            </el-button>
+            <el-button
+              type="danger"
+              link
+              size="small"
+              title="移除"
+              @click="emit('remove', row.code)"
+            >
+              ×
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
   </div>
 </template>
@@ -94,14 +185,18 @@ const emit = defineEmits<{
   setHolding: [row: StockItem];
 }>();
 
+function rowClassName({ row }: { row: StockItem }) {
+  return row.isSellOut ? "is-sell-out" : "";
+}
+
 function percentClass(p: string) {
   if (!p || p === "—") return "";
-  return p.startsWith("+") ? "up" : "down";
+  return p.startsWith("+") ? "down" : "up";
 }
 
 function earnClass(v: number | undefined) {
   if (v == null || v === 0) return "";
-  return v > 0 ? "up" : "down";
+  return v > 0 ? "down" : "up";
 }
 
 function formatEarnings(v: number | undefined): string {
@@ -117,108 +212,80 @@ function formatEarnPct(v: number | undefined): string {
   const s = v >= 0 ? "+" : "";
   return s + v.toFixed(2) + "%";
 }
+
+function toNumber(v: string | number | undefined): number {
+  if (v == null || v === "—") return 0;
+  const s = String(v).replace("%", "").replace("+", "");
+  const n = Number.parseFloat(s);
+  return Number.isNaN(n) ? 0 : n;
+}
+
+function toVolume(v: string | number | undefined): number {
+  if (v == null || v === "—") return 0;
+  const s = String(v).trim();
+  const num = Number.parseFloat(s.replace(/[^\d.-]/g, ""));
+  if (Number.isNaN(num)) return 0;
+  if (s.endsWith("亿")) return num * 100000000;
+  if (s.endsWith("万")) return num * 10000;
+  return num;
+}
+
+const sortByPrice = (a: StockItem, b: StockItem) =>
+  toNumber(a.price) - toNumber(b.price);
+const sortByPercent = (a: StockItem, b: StockItem) =>
+  toNumber(a.percent) - toNumber(b.percent);
+const sortByUpdown = (a: StockItem, b: StockItem) =>
+  toNumber(a.updown) - toNumber(b.updown);
+const sortByOpen = (a: StockItem, b: StockItem) =>
+  toNumber(a.open) - toNumber(b.open);
+const sortByHigh = (a: StockItem, b: StockItem) =>
+  toNumber(a.high) - toNumber(b.high);
+const sortByLow = (a: StockItem, b: StockItem) =>
+  toNumber(a.low) - toNumber(b.low);
+const sortByVolume = (a: StockItem, b: StockItem) =>
+  toVolume(a.volume) - toVolume(b.volume);
+const sortByHeldAmount = (a: StockItem, b: StockItem) =>
+  toNumber(a.heldAmount) - toNumber(b.heldAmount);
+const sortByEarnings = (a: StockItem, b: StockItem) =>
+  toNumber(a.earnings) - toNumber(b.earnings);
+const sortByEarningPercent = (a: StockItem, b: StockItem) =>
+  toNumber(a.earningPercent) - toNumber(b.earningPercent);
 </script>
 
 <style scoped>
 .table-wrap {
   min-height: 120px;
 }
-.loading,
-.empty {
-  text-align: center;
-  padding: 2rem;
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
 .table-scroll {
   overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius);
 }
-.stock-table {
-  width: 100%;
-  min-width: 960px;
-  border-collapse: collapse;
-  font-size: 0.875rem;
+.stock-table :deep(.el-table) {
+  --el-table-bg-color: var(--bg-card);
+  --el-table-tr-bg-color: var(--bg-card);
+  --el-table-header-bg-color: var(--bg-card);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.04);
+  --el-table-border-color: var(--border);
+  --el-table-text-color: var(--text);
 }
-.stock-table th,
-.stock-table td {
-  padding: 0.5rem 0.65rem;
-  text-align: right;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
+.stock-table :deep(.el-table__row.is-sell-out) {
+  opacity: 0.7;
 }
-.stock-table th {
-  color: var(--text-muted);
-  font-weight: 500;
-  position: sticky;
-  top: 0;
-  background: var(--bg-card);
-  z-index: 1;
+.stock-table :deep(.el-table__row) {
+  transition: background-color 0.2s ease;
 }
-.stock-table .name-col,
-.stock-table .code-col {
-  text-align: left;
-}
-.stock-table .name-col {
-  font-weight: 500;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.stock-table .market-col {
-  color: var(--text-muted);
-  font-size: 0.8rem;
-}
-.stock-table .percent,
-.stock-table .updown,
-.stock-table .earn-col,
-.stock-table .earn-pct-col {
+.stock-table :deep(.up) {
+  color: var(--up);
   font-weight: 600;
 }
-.stock-table .vol-col {
-  color: var(--text-muted);
-  font-size: 0.8rem;
-}
-.stock-table .hold-col {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-.stock-table .muted {
-  color: var(--text-muted);
-}
-.th-action {
-  width: 90px;
-}
-.action-col {
-  text-align: center;
-}
-.btn-cell {
-  padding: 0.25rem 0.4rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.8rem;
-  margin-right: 2px;
-  background: transparent;
-  color: var(--text-muted);
-}
-.btn-cell:hover {
-  background: var(--border);
-}
-.btn-holding:hover {
-  color: var(--accent);
-}
-.btn-remove {
-  font-size: 1rem;
-  line-height: 1;
-}
-.btn-remove:hover {
+.stock-table :deep(.down) {
   color: var(--down);
+  font-weight: 600;
 }
-.row:hover {
-  background: rgba(255, 255, 255, 0.03);
+.stock-table :deep(.muted) {
+  color: var(--text-muted);
 }
-.row.is-sell-out {
-  opacity: 0.7;
+.table-wrap :deep(.el-loading-mask) {
+  background-color: rgba(15, 15, 18, 0.7);
 }
 </style>
