@@ -183,6 +183,15 @@
             <el-button type="success" plain @click="openAiPick">
               AI 选股
             </el-button>
+            <el-button type="primary" plain @click="openAiSectorNow">
+              板块最强
+            </el-button>
+            <el-button type="warning" plain @click="openAiAfterClose">
+              收盘复盘
+            </el-button>
+            <el-button plain @click="openAiScreenModal">
+              条件选股
+            </el-button>
             <el-select
               v-model="currentGroupId"
               size="small"
@@ -445,11 +454,173 @@
               <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
             </div>
             <div class="ai-value">
-              <div><b>风险：</b>{{ p.riskNotes.join('；') }}</div>
+              <div><b>风险：</b>{{ p.riskNotes?.join('；') || '—' }}</div>
             </div>
             <el-divider />
           </div>
           <div class="ai-disclaimer">{{ aiPickResult.disclaimer }}</div>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 板块最强（盘中） -->
+    <el-dialog
+      v-model="aiSectorModal"
+      title="板块最强（A股）"
+      width="820px"
+      destroy-on-close
+    >
+      <el-skeleton v-if="aiSectorLoading" :rows="12" animated />
+      <template v-else>
+        <el-empty v-if="!aiSectorResult" description="暂无结果" />
+        <div v-else class="ai-block">
+          <div class="ai-row" v-for="s in aiSectorResult.bestSectors" :key="s.code">
+            <div class="ai-label">#{{ s.rank }} {{ s.name }}</div>
+            <div class="ai-value">
+              <div class="muted">{{ s.kind }} · {{ s.code }}</div>
+              <ul>
+                <li v-for="(x,i) in s.whyHot" :key="i">{{ x }}</li>
+              </ul>
+              <div class="muted">风险：{{ s.riskNotes?.join('；') }}</div>
+            </div>
+          </div>
+
+          <el-divider />
+          <div v-if="aiSectorResult.openCandidates?.length" class="ai-block">
+            <div class="ai-label">建议关注/开仓候选</div>
+            <div v-for="p in aiSectorResult.openCandidates" :key="p.code" class="ai-pick-item">
+              <div class="ai-pick-head">
+                <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
+              </div>
+              <ul>
+                <li v-for="(r,i) in p.reason" :key="i">{{ r }}</li>
+              </ul>
+              <div class="ai-value">
+                <div><b>入场：</b>{{ p.plan.entry }}</div>
+                <div><b>止损/无效：</b>{{ p.plan.invalidation }}</div>
+                <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
+              </div>
+              <div class="ai-value"><b>风险：</b>{{ p.riskNotes?.join('；') || '—' }}</div>
+              <el-divider />
+            </div>
+          </div>
+
+          <div class="ai-disclaimer">{{ aiSectorResult.disclaimer }}</div>
+        </div>
+      </template>
+      <template #footer>
+        <el-button @click="aiSectorModal=false">关闭</el-button>
+        <el-button type="primary" :loading="aiSectorLoading" @click="openAiSectorNow">刷新</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 收盘复盘 -->
+    <el-dialog
+      v-model="aiAfterCloseModal"
+      title="收盘复盘（A股）"
+      width="820px"
+      destroy-on-close
+    >
+      <el-skeleton v-if="aiAfterCloseLoading" :rows="12" animated />
+      <template v-else>
+        <el-empty v-if="!aiAfterCloseResult" description="暂无结果" />
+        <div v-else class="ai-block">
+          <div class="ai-row" v-for="s in aiAfterCloseResult.hotSectors" :key="s.code">
+            <div class="ai-label">#{{ s.rank }} {{ s.name }}</div>
+            <div class="ai-value">
+              <div class="muted">{{ s.kind }} · {{ s.code }}</div>
+              <ul>
+                <li v-for="(x,i) in s.whyHot" :key="i">{{ x }}</li>
+              </ul>
+              <div class="muted">风险：{{ s.riskNotes?.join('；') }}</div>
+            </div>
+          </div>
+          <el-divider />
+          <div v-if="aiAfterCloseResult.openCandidates?.length" class="ai-block">
+            <div class="ai-label">建议关注/开仓候选</div>
+            <div v-for="p in aiAfterCloseResult.openCandidates" :key="p.code" class="ai-pick-item">
+              <div class="ai-pick-head">
+                <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
+              </div>
+              <ul>
+                <li v-for="(r,i) in p.reason" :key="i">{{ r }}</li>
+              </ul>
+              <div class="ai-value">
+                <div><b>入场：</b>{{ p.plan.entry }}</div>
+                <div><b>止损/无效：</b>{{ p.plan.invalidation }}</div>
+                <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
+              </div>
+              <div class="ai-value"><b>风险：</b>{{ p.riskNotes?.join('；') || '—' }}</div>
+              <el-divider />
+            </div>
+          </div>
+          <div class="ai-disclaimer">{{ aiAfterCloseResult.disclaimer }}</div>
+        </div>
+      </template>
+      <template #footer>
+        <el-button @click="aiAfterCloseModal=false">关闭</el-button>
+        <el-button type="primary" :loading="aiAfterCloseLoading" @click="openAiAfterClose">刷新</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 条件选股 -->
+    <el-dialog
+      v-model="aiScreenModal"
+      title="条件选股（A股）"
+      width="860px"
+      destroy-on-close
+    >
+      <div style="margin-bottom: 12px">
+        <el-form inline>
+          <el-form-item label="候选范围">
+            <el-input-number v-model="aiScreenLimit" :min="50" :max="500" />
+          </el-form-item>
+          <el-form-item label="条件">
+            <el-input
+              v-model="aiScreenQuery"
+              placeholder="例如：近3天强势，成交额放大，今日回踩不破，适合短线"
+              style="width: 520px"
+              clearable
+            />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" :loading="aiScreenLoading" @click="runAiScreen">
+              开始选股
+            </el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <el-skeleton v-if="aiScreenLoading" :rows="10" animated />
+      <template v-else>
+        <el-empty v-if="!aiScreenResult" description="暂无结果" />
+        <div v-else class="ai-block">
+          <div class="ai-row" v-if="aiScreenResult.interpretation">
+            <div class="ai-label">理解</div>
+            <div class="ai-value">
+              <div><b>必须：</b>{{ aiScreenResult.interpretation.must?.join('；') }}</div>
+              <div><b>偏好：</b>{{ aiScreenResult.interpretation.prefer?.join('；') }}</div>
+              <div><b>避免：</b>{{ aiScreenResult.interpretation.avoid?.join('；') }}</div>
+            </div>
+          </div>
+
+          <div v-for="p in aiScreenResult.picks" :key="p.code" class="ai-pick-item">
+            <div class="ai-pick-head">
+              <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
+            </div>
+            <ul>
+              <li v-for="(r,i) in p.reason" :key="i">{{ r }}</li>
+            </ul>
+            <div class="ai-value">
+              <div><b>入场：</b>{{ p.plan.entry }}</div>
+              <div><b>止损/无效：</b>{{ p.plan.invalidation }}</div>
+              <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
+            </div>
+            <div class="ai-value"><b>风险：</b>{{ p.riskNotes?.join('；') || '—' }}</div>
+            <el-divider />
+          </div>
+
+          <div class="ai-disclaimer">{{ aiScreenResult.disclaimer }}</div>
         </div>
       </template>
     </el-dialog>
@@ -463,8 +634,20 @@ let searchTimer: ReturnType<typeof setTimeout> | null = null;
 import StockSearch from "./components/StockSearch.vue";
 import StockTable from "./components/StockTable.vue";
 import { fetchStockList, searchStock, searchItemToCode } from "./api/stock";
-import { aiAnalyzeStock as aiAnalyzeStockApi, aiPickStocks } from "./api/ai";
-import type { AiAnalyzeResult, AiPickResult } from "./api/ai";
+import {
+  aiAnalyzeStock as aiAnalyzeStockApi,
+  aiPickStocks,
+  aiSectorNow,
+  aiAfterClose,
+  aiScreenStocks,
+} from "./api/ai";
+import type {
+  AiAnalyzeResult,
+  AiPickResult,
+  AiSectorNowResult,
+  AiAfterCloseResult,
+  AiScreenResult,
+} from "./api/ai";
 import type {
   StockItem,
   SearchItem,
@@ -544,6 +727,21 @@ const aiPickResult = ref<AiPickResult | null>(null);
 const aiPickTopN = ref(3);
 const aiPickHorizon = ref("swing_1_5_days");
 const aiPickRisk = ref("medium");
+
+// AI · A股板块/条件选股
+const aiSectorModal = ref(false);
+const aiSectorLoading = ref(false);
+const aiSectorResult = ref<AiSectorNowResult | null>(null);
+
+const aiAfterCloseModal = ref(false);
+const aiAfterCloseLoading = ref(false);
+const aiAfterCloseResult = ref<AiAfterCloseResult | null>(null);
+
+const aiScreenModal = ref(false);
+const aiScreenLoading = ref(false);
+const aiScreenQuery = ref("");
+const aiScreenResult = ref<AiScreenResult | null>(null);
+const aiScreenLimit = ref(200);
 
 function createGroupId() {
   return `g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -1008,6 +1206,72 @@ async function openAiPick() {
     ElMessage.error("AI 选股失败：请检查 VOLCENGINE_API_KEY/模型ID 或服务是否可用");
   } finally {
     aiPickLoading.value = false;
+  }
+}
+
+async function openAiSectorNow() {
+  aiSectorModal.value = true;
+  aiSectorLoading.value = true;
+  aiSectorResult.value = null;
+  try {
+    aiSectorResult.value = await aiSectorNow({
+      topSectorN: 10,
+      topStockN: 40,
+      horizon: aiPickHorizon.value,
+      riskProfile: aiPickRisk.value,
+    });
+  } catch (e) {
+    console.error(e);
+    ElMessage.error("板块分析失败：请检查后端服务/开源接口是否可用");
+  } finally {
+    aiSectorLoading.value = false;
+  }
+}
+
+async function openAiAfterClose() {
+  aiAfterCloseModal.value = true;
+  aiAfterCloseLoading.value = true;
+  aiAfterCloseResult.value = null;
+  try {
+    aiAfterCloseResult.value = await aiAfterClose({
+      topSectorN: 15,
+      topStockN: 40,
+      horizon: aiPickHorizon.value,
+      riskProfile: aiPickRisk.value,
+    });
+  } catch (e) {
+    console.error(e);
+    ElMessage.error("收盘复盘失败：请检查后端服务/开源接口是否可用");
+  } finally {
+    aiAfterCloseLoading.value = false;
+  }
+}
+
+function openAiScreenModal() {
+  aiScreenModal.value = true;
+  aiScreenResult.value = null;
+}
+
+async function runAiScreen() {
+  const q = aiScreenQuery.value.trim();
+  if (!q) {
+    ElMessage.warning("先输入选股条件（自然语言）");
+    return;
+  }
+  aiScreenLoading.value = true;
+  aiScreenResult.value = null;
+  try {
+    aiScreenResult.value = await aiScreenStocks({
+      query: q,
+      limit: aiScreenLimit.value,
+      horizon: aiPickHorizon.value,
+      riskProfile: aiPickRisk.value,
+    });
+  } catch (e) {
+    console.error(e);
+    ElMessage.error("条件选股失败：请检查后端服务/开源接口是否可用");
+  } finally {
+    aiScreenLoading.value = false;
   }
 }
 
