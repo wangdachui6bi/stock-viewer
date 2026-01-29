@@ -37,6 +37,12 @@ export interface SearchItem {
   label: string;
 }
 
+export interface NewsItem {
+  title: string;
+  link: string;
+  pubDate?: string;
+}
+
 /** 持仓配置（本地存储） */
 export interface StockPriceItem {
   name?: string;

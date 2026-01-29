@@ -168,6 +168,15 @@
               AI
             </el-button>
             <el-button
+              type="info"
+              link
+              size="small"
+              title="K线图"
+              @click="emit('kline', row)"
+            >
+              K线
+            </el-button>
+            <el-button
               type="primary"
               link
               size="small"
@@ -214,6 +223,7 @@ const emit = defineEmits<{
   setHolding: [row: StockItem];
   setGroup: [row: StockItem];
   aiAnalyze: [row: StockItem];
+  kline: [row: StockItem];
 }>();
 
 function rowClassName({ row }: { row: StockItem }) {

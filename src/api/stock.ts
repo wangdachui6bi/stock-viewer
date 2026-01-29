@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { StockItem, SearchItem } from "@/types/stock";
+import type { StockItem, SearchItem, NewsItem } from "@/types/stock";
 
 const api = axios.create({ baseURL: "/api", timeout: 15000 });
 
@@ -31,6 +31,13 @@ export async function searchStock(keyword: string): Promise<SearchItem[]> {
   if (!keyword.trim()) return [];
   const { data } = await api.get<SearchItem[]>("/search", {
     params: { q: keyword },
+  });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchNews(limit = 20): Promise<NewsItem[]> {
+  const { data } = await api.get<NewsItem[]>("/news", {
+    params: { limit },
   });
   return Array.isArray(data) ? data : [];
 }

@@ -75,10 +75,54 @@ function extractJsonObject(text: string): string {
   const fenced = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   if (fenced?.[1]) return fenced[1].trim();
 
-  // 2) 尝试截取第一段 JSON 对象
-  const first = s.indexOf("{");
-  const last = s.lastIndexOf("}");
-  if (first !== -1 && last !== -1 && last > first) return s.slice(first, last + 1);
+  // 2) 尝试截取第一段完整 JSON（支持对象/数组）
+  const firstBrace = s.indexOf("{");
+  const firstBracket = s.indexOf("[");
+  let start = -1;
+  let openChar = "";
+  if (firstBrace !== -1 && firstBracket !== -1) {
+    if (firstBrace < firstBracket) {
+      start = firstBrace;
+      openChar = "{";
+    } else {
+      start = firstBracket;
+      openChar = "[";
+    }
+  } else if (firstBrace !== -1) {
+    start = firstBrace;
+    openChar = "{";
+  } else if (firstBracket !== -1) {
+    start = firstBracket;
+    openChar = "[";
+  }
+
+  if (start !== -1) {
+    const closeChar = openChar === "{" ? "}" : "]";
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = start; i < s.length; i += 1) {
+      const ch = s[i];
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === "\"") {
+        inString = !inString;
+        continue;
+      }
+      if (inString) continue;
+      if (ch === openChar) depth += 1;
+      if (ch === closeChar) depth -= 1;
+      if (depth === 0) {
+        return s.slice(start, i + 1);
+      }
+    }
+  }
 
   return s;
 }
@@ -88,6 +132,15 @@ function safeJsonParse<T = any>(text: string): T {
   try {
     return JSON.parse(raw) as T;
   } catch (e: any) {
+    // 兼容返回了 JSON 字符串（被额外包了一层引号）的情况
+    try {
+      const unwrapped = JSON.parse(raw);
+      if (typeof unwrapped === "string") {
+        return JSON.parse(extractJsonObject(unwrapped)) as T;
+      }
+    } catch {
+      // ignore
+    }
     try {
       return JSON5.parse(raw) as T;
     } catch (e2: any) {
@@ -247,6 +300,28 @@ async function fetchNewsHeadlines(limit = 10) {
       .filter((t) => t && t !== "新浪财经" && t !== "滚动新闻")
       .slice(0, limit);
     return titles;
+  } catch {
+    return [];
+  }
+}
+
+async function fetchNewsItems(limit = 20) {
+  const url = "https://rss.sina.com.cn/roll/finance/hgjj.xml";
+  try {
+    const { data } = await axios.get(url, { timeout: 15000 });
+    const xml = String(data || "");
+    const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)]
+      .map((m) => m[1])
+      .map((block) => {
+        const title =
+          /<title><!\[CDATA\[(.*?)\]\]><\/title>/.exec(block)?.[1] || "";
+        const link = /<link>(.*?)<\/link>/.exec(block)?.[1] || "";
+        const pubDate = /<pubDate>(.*?)<\/pubDate>/.exec(block)?.[1] || "";
+        return { title, link, pubDate };
+      })
+      .filter((item) => item.title && item.title !== "新浪财经")
+      .slice(0, limit);
+    return items;
   } catch {
     return [];
   }
@@ -708,6 +783,23 @@ app.get("/api/search", async (req, res) => {
     const message = e instanceof Error ? e.message : String(e);
     logRequestError("tencent:search", start || Date.now(), e, { url, q });
     console.error("/api/search", message);
+    res.status(500).json({ error: message });
+  }
+});
+
+// 资讯：新浪财经 RSS
+app.get("/api/news", async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 20, 50);
+  let start = 0;
+  try {
+    start = logRequestStart("sina:news", { limit });
+    const items = await fetchNewsItems(limit);
+    logRequestOk("sina:news", start, { count: items.length });
+    res.json(items);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logRequestError("sina:news", start || Date.now(), e, { limit });
+    console.error("/api/news", message);
     res.status(500).json({ error: message });
   }
 });

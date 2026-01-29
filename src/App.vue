@@ -79,10 +79,14 @@
                     : ''
               "
             >
-              {{ formatSigned(portfolioSummary.totalEarnings) }}
+              {{
+                hideMarketValue
+                  ? "****"
+                  : formatSigned(portfolioSummary.totalEarnings)
+              }}
             </div>
             <div class="summary-sub">
-              {{ formatSigned(portfolioSummary.totalPct, '%') }}
+              {{ hideMarketValue ? "****" : formatSigned(portfolioSummary.totalPct, '%') }}
             </div>
           </div>
           <div class="summary-card">
@@ -181,6 +185,35 @@
             </el-table>
           </div>
         </div>
+        <div class="news-panel">
+          <div class="section-head">
+            <div class="section-title-row">
+              <h3>资讯</h3>
+              <span v-if="newsLastUpdate" class="last-update">
+                更新于 {{ formatTime(newsLastUpdate) }}
+              </span>
+            </div>
+            <div class="actions">
+              <el-button size="small" :loading="newsLoading" @click="loadNews">
+                刷新
+              </el-button>
+            </div>
+          </div>
+          <div class="news-list">
+            <el-empty
+              v-if="!newsLoading && !newsList.length"
+              description="暂无资讯"
+            />
+            <ul v-else class="news-items">
+              <li v-for="item in newsList" :key="item.link || item.title">
+                <a :href="item.link" target="_blank" rel="noopener">
+                  {{ item.title }}
+                </a>
+                <span class="muted">{{ formatNewsTime(item.pubDate) }}</span>
+              </li>
+            </ul>
+          </div>
+        </div>
       </section>
       <section class="watchlist-section">
         <div class="section-head">
@@ -194,13 +227,13 @@
             </span>
           </div>
           <div class="actions">
-            <el-button type="success" plain @click="openAiPick">
+            <el-button type="success" plain @click="openAiPickModal">
               AI 选股
             </el-button>
-            <el-button type="primary" plain @click="openAiSectorNow">
+            <el-button type="primary" plain @click="openAiSectorModal">
               板块最强
             </el-button>
-            <el-button type="warning" plain @click="openAiAfterClose">
+            <el-button type="warning" plain @click="openAiAfterCloseModal">
               收盘复盘
             </el-button>
             <el-button plain @click="openAiScreenModal">
@@ -265,6 +298,7 @@
           @set-holding="openHoldingModal"
           @set-group="openGroupAssign"
           @ai-analyze="openAiAnalyze"
+          @kline="openKline"
         />
       </section>
     </main>
@@ -374,6 +408,7 @@
       :title="`AI 分析 · ${aiAnalyzeTarget?.name ?? ''} (${aiAnalyzeTarget?.code ?? ''})`"
       width="720px"
       destroy-on-close
+      class="ai-dialog"
     >
       <el-skeleton v-if="aiAnalyzeLoading" :rows="8" animated />
       <template v-else>
@@ -426,21 +461,24 @@
         <el-divider />
         <div class="ai-history">
           <div class="ai-history-head">
-            <div class="ai-history-title">历史记录</div>
+            <div class="ai-history-title">历史记录（仅当前股票）</div>
             <el-button
               link
               type="danger"
               size="small"
-              :disabled="!aiAnalyzeHistory.length"
+              :disabled="!aiAnalyzeHistoryForCurrentStock.length"
               @click="clearAiAnalyzeHistory"
             >
               清空
             </el-button>
           </div>
-          <el-empty v-if="!aiAnalyzeHistory.length" description="暂无历史" />
+          <el-empty
+            v-if="!aiAnalyzeHistoryForCurrentStock.length"
+            description="暂无该股票的历史"
+          />
           <div v-else class="ai-history-list">
             <div
-              v-for="item in aiAnalyzeHistory"
+              v-for="item in aiAnalyzeHistoryForCurrentStock"
               :key="item.id"
               class="ai-history-item"
             >
@@ -461,6 +499,80 @@
           </div>
         </div>
       </template>
+      <template #footer>
+        <el-button @click="aiAnalyzeModal = false">关闭</el-button>
+        <el-button
+          type="primary"
+          :loading="aiAnalyzeLoading"
+          :disabled="!aiAnalyzeTarget"
+          @click="runAiAnalyze"
+        >
+          开始分析
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- K线图 -->
+    <el-dialog
+      v-model="klineModal"
+      :title="`K线图 · ${klineStock?.name ?? ''} (${klineStock?.code ?? ''})`"
+      width="860px"
+      destroy-on-close
+    >
+      <div class="kline-controls">
+        <el-radio-group v-model="klinePeriod" size="small">
+          <el-radio-button label="min">分时</el-radio-button>
+          <el-radio-button label="daily">日K</el-radio-button>
+          <el-radio-button label="weekly">周K</el-radio-button>
+          <el-radio-button label="monthly">月K</el-radio-button>
+        </el-radio-group>
+        <el-button size="small" @click="refreshKline">刷新</el-button>
+      </div>
+      <div class="kline-wrap">
+        <el-image v-if="klineUrl" :src="klineUrl" fit="contain" class="kline-image">
+          <template #error>
+            <div class="muted">K线加载失败</div>
+          </template>
+        </el-image>
+        <el-empty v-else description="暂无数据" />
+      </div>
+      <div class="trade-tools">
+        <div class="trade-block">
+          <div class="trade-title">交易提示</div>
+          <el-empty
+            v-if="!klineSignals.length"
+            description="暂无明显信号"
+          />
+          <ul v-else>
+            <li v-for="(s, i) in klineSignals" :key="i">{{ s }}</li>
+          </ul>
+        </div>
+        <div class="trade-block">
+          <div class="trade-title">一键下单辅助</div>
+          <div class="trade-controls">
+            <div class="trade-control">
+              <span class="muted">止损%</span>
+              <el-input-number v-model="tradeRiskPct" :min="0" :max="20" :step="0.5" />
+            </div>
+            <div class="trade-control">
+              <span class="muted">止盈%</span>
+              <el-input-number v-model="tradeTakePct" :min="0" :max="50" :step="1" />
+            </div>
+          </div>
+          <div class="trade-rows" v-if="tradePlan">
+            <div><b>基准价：</b>{{ formatMoney(tradePlan.basePrice) }}</div>
+            <div><b>止损价：</b>{{ formatMoney(tradePlan.stopPrice) }}</div>
+            <div><b>止盈价：</b>{{ formatMoney(tradePlan.takePrice) }}</div>
+            <div class="muted">
+              预估盈亏（每股）：{{ tradePlan.perShareLoss }}/{{ tradePlan.perShareGain }}
+            </div>
+            <div v-if="tradePlan.totalLoss != null" class="muted">
+              预估盈亏（持仓）：{{ tradePlan.totalLoss }}/{{ tradePlan.totalGain }}
+            </div>
+          </div>
+          <el-empty v-else description="暂无基准价" />
+        </div>
+      </div>
     </el-dialog>
 
     <!-- AI 选股 -->
@@ -469,6 +581,7 @@
       title="AI 选股（基于当前自选列表）"
       width="780px"
       destroy-on-close
+      class="ai-dialog"
     >
       <div class="ai-pick-controls">
         <el-form inline>
@@ -489,8 +602,8 @@
             </el-select>
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" :loading="aiPickLoading" @click="openAiPick">
-              重新计算
+            <el-button type="primary" :loading="aiPickLoading" @click="runAiPick">
+              开始计算
             </el-button>
           </el-form-item>
         </el-form>
@@ -521,6 +634,45 @@
           <div class="ai-disclaimer">{{ aiPickResult.disclaimer }}</div>
         </div>
       </template>
+      <el-divider />
+      <div class="ai-history">
+        <div class="ai-history-head">
+          <div class="ai-history-title">历史记录</div>
+          <el-button
+            link
+            type="danger"
+            size="small"
+            :disabled="!aiPickHistory.length"
+            @click="clearAiPickHistory"
+          >
+            清空
+          </el-button>
+        </div>
+        <el-empty v-if="!aiPickHistory.length" description="暂无历史" />
+        <div v-else class="ai-history-list">
+          <div
+            v-for="item in aiPickHistory"
+            :key="item.id"
+            class="ai-history-item"
+          >
+            <div class="ai-history-main">
+              <div class="ai-history-title-row">
+                <b>AI 选股</b>
+                <span class="muted">{{ formatDateTime(item.ts) }}</span>
+              </div>
+              <div class="muted">
+                Top{{ item.params.topN }} · 周期
+                {{ formatHorizon(item.params.horizon) }} · 风险
+                {{ formatRisk(item.params.riskProfile) }} · 候选
+                {{ item.params.candidates }}
+              </div>
+            </div>
+            <el-button size="small" @click="applyAiPickHistory(item)">
+              查看
+            </el-button>
+          </div>
+        </div>
+      </div>
     </el-dialog>
 
     <!-- 板块最强（盘中） -->
@@ -529,6 +681,7 @@
       title="板块最强（A股）"
       width="820px"
       destroy-on-close
+      class="ai-dialog"
     >
       <el-skeleton v-if="aiSectorLoading" :rows="12" animated />
       <template v-else>
@@ -609,7 +762,9 @@
       </div>
       <template #footer>
         <el-button @click="aiSectorModal=false">关闭</el-button>
-        <el-button type="primary" :loading="aiSectorLoading" @click="openAiSectorNow">刷新</el-button>
+        <el-button type="primary" :loading="aiSectorLoading" @click="runAiSectorNow">
+          刷新
+        </el-button>
       </template>
     </el-dialog>
 
@@ -619,6 +774,7 @@
       title="收盘复盘（A股）"
       width="820px"
       destroy-on-close
+      class="ai-dialog"
     >
       <el-skeleton v-if="aiAfterCloseLoading" :rows="12" animated />
       <template v-else>
@@ -697,7 +853,13 @@
       </div>
       <template #footer>
         <el-button @click="aiAfterCloseModal=false">关闭</el-button>
-        <el-button type="primary" :loading="aiAfterCloseLoading" @click="openAiAfterClose">刷新</el-button>
+        <el-button
+          type="primary"
+          :loading="aiAfterCloseLoading"
+          @click="runAiAfterClose"
+        >
+          刷新
+        </el-button>
       </template>
     </el-dialog>
 
@@ -707,6 +869,7 @@
       title="条件选股（A股）"
       width="860px"
       destroy-on-close
+      class="ai-dialog"
     >
       <div style="margin-bottom: 12px">
         <el-form inline>
@@ -806,7 +969,12 @@ import { ElMessage } from "element-plus";
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 import StockSearch from "./components/StockSearch.vue";
 import StockTable from "./components/StockTable.vue";
-import { fetchStockList, searchStock, searchItemToCode } from "./api/stock";
+import {
+  fetchStockList,
+  fetchNews,
+  searchStock,
+  searchItemToCode,
+} from "./api/stock";
 import {
   aiAnalyzeStock as aiAnalyzeStockApi,
   aiPickStocks,
@@ -826,6 +994,7 @@ import type {
   SearchItem,
   StockPriceItem,
   SortType,
+  NewsItem,
 } from "./types/stock";
 import { SORT_LABELS } from "./types/stock";
 
@@ -860,6 +1029,7 @@ const STORAGE_ALERT_KEY = "vue-stock-viewer-alerts";
 const STORAGE_HIDE_VALUE_KEY = "vue-stock-viewer-hideMarketValue";
 const STORAGE_HOLDING_FILTER_KEY = "vue-stock-viewer-holdingFilter";
 const STORAGE_AI_ANALYZE_HISTORY_KEY = "vue-stock-viewer-aiAnalyzeHistory";
+const STORAGE_AI_PICK_HISTORY_KEY = "vue-stock-viewer-aiPickHistory";
 const STORAGE_AI_SECTOR_HISTORY_KEY = "vue-stock-viewer-aiSectorHistory";
 const STORAGE_AI_AFTER_CLOSE_HISTORY_KEY = "vue-stock-viewer-aiAfterCloseHistory";
 const STORAGE_AI_SCREEN_HISTORY_KEY = "vue-stock-viewer-aiScreenHistory";
@@ -877,6 +1047,9 @@ const loading = ref(false);
 const sortType = ref<SortType>(0);
 const stockPrice = ref<Record<string, StockPriceItem>>({});
 const alerts = ref<AlertRule[]>([]);
+const newsList = ref<NewsItem[]>([]);
+const newsLoading = ref(false);
+const newsLastUpdate = ref<number | null>(null);
 const alertForm = ref({
   code: "",
   type: "price" as AlertRule["type"],
@@ -916,9 +1089,22 @@ const aiAnalyzeHistory = ref<
   >[]
 >([]);
 
+const klineModal = ref(false);
+const klineStock = ref<StockItem | null>(null);
+const klinePeriod = ref<"min" | "daily" | "weekly" | "monthly">("daily");
+const klineRefreshKey = ref(0);
+const tradeRiskPct = ref(3);
+const tradeTakePct = ref(6);
+
 const aiPickModal = ref(false);
 const aiPickLoading = ref(false);
 const aiPickResult = ref<AiPickResult | null>(null);
+const aiPickHistory = ref<
+  AiHistoryItem<
+    AiPickResult,
+    { topN: number; horizon: string; riskProfile: string; candidates: number }
+  >[]
+>([]);
 const aiPickTopN = ref(3);
 const aiPickHorizon = ref("swing_1_5_days");
 const aiPickRisk = ref("medium");
@@ -1065,6 +1251,10 @@ function saveAiHistory() {
     JSON.stringify(aiAnalyzeHistory.value),
   );
   localStorage.setItem(
+    STORAGE_AI_PICK_HISTORY_KEY,
+    JSON.stringify(aiPickHistory.value),
+  );
+  localStorage.setItem(
     STORAGE_AI_SECTOR_HISTORY_KEY,
     JSON.stringify(aiSectorHistory.value),
   );
@@ -1080,6 +1270,7 @@ function saveAiHistory() {
 
 function loadAiHistory() {
   aiAnalyzeHistory.value = readHistory(STORAGE_AI_ANALYZE_HISTORY_KEY);
+  aiPickHistory.value = readHistory(STORAGE_AI_PICK_HISTORY_KEY);
   aiSectorHistory.value = readHistory(STORAGE_AI_SECTOR_HISTORY_KEY);
   aiAfterCloseHistory.value = readHistory(STORAGE_AI_AFTER_CLOSE_HISTORY_KEY);
   aiScreenHistory.value = readHistory(STORAGE_AI_SCREEN_HISTORY_KEY);
@@ -1177,6 +1368,71 @@ const displayList = computed(() => {
   return sortList(filtered);
 });
 
+/** 当前打开 AI 分析弹框的股票对应的历史记录（按股票代码过滤） */
+const aiAnalyzeHistoryForCurrentStock = computed(() => {
+  const target = aiAnalyzeTarget.value;
+  if (!target?.code) return [];
+  const codeLower = target.code.toLowerCase();
+  return aiAnalyzeHistory.value.filter(
+    (item) => (item.params.stock?.code || "").toLowerCase() === codeLower,
+  );
+});
+
+const klineUrl = computed(() => {
+  if (!klineStock.value) return "";
+  return buildKlineUrl(klineStock.value, klinePeriod.value, klineRefreshKey.value);
+});
+
+const klineSignals = computed(() => {
+  if (!klineStock.value) return [];
+  const price = parseNum(klineStock.value.price);
+  const high = parseNum(klineStock.value.high);
+  const low = parseNum(klineStock.value.low);
+  const open = parseNum(klineStock.value.open);
+  const yest = parseNum(klineStock.value.yestclose);
+  if (!price) return [];
+  const tips: string[] = [];
+  const near = (a: number, b: number, pct = 0.5) =>
+    b > 0 && Math.abs(a - b) / b <= pct / 100;
+  if (high && price >= high) tips.push("突破日内高点，注意追高与回撤风险");
+  else if (high && near(price, high)) tips.push("接近日内高点，关注放量突破");
+  if (low && price <= low) tips.push("跌破日内低点，谨防继续下行");
+  else if (low && near(price, low)) tips.push("接近日内低点，观察止跌反弹");
+  if (open && price > open && yest && price < yest)
+    tips.push("日内转强但仍在昨收下，关注是否回补缺口");
+  if (open && price < open && yest && price > yest)
+    tips.push("日内走弱但仍在昨收上，关注回踩支撑");
+  return tips;
+});
+
+const tradePlan = computed(() => {
+  if (!klineStock.value) return null;
+  const price = parseNum(klineStock.value.price);
+  const heldPrice = klineStock.value.heldPrice ?? 0;
+  const base = heldPrice > 0 ? heldPrice : price;
+  if (!base) return null;
+  const risk = Math.max(0, Number(tradeRiskPct.value) || 0);
+  const take = Math.max(0, Number(tradeTakePct.value) || 0);
+  const stopPrice = base * (1 - risk / 100);
+  const takePrice = base * (1 + take / 100);
+  const perShareLoss = formatMoney(base - stopPrice);
+  const perShareGain = formatMoney(takePrice - base);
+  const amount = klineStock.value.heldAmount && klineStock.value.heldAmount > 0
+    ? klineStock.value.heldAmount
+    : 0;
+  const totalLoss = amount ? formatMoney((base - stopPrice) * amount) : null;
+  const totalGain = amount ? formatMoney((takePrice - base) * amount) : null;
+  return {
+    basePrice: base,
+    stopPrice,
+    takePrice,
+    perShareLoss,
+    perShareGain,
+    totalLoss,
+    totalGain,
+  };
+});
+
 const alertStockOptions = computed(() =>
   stockList.value.map((item) => ({
     code: item.code,
@@ -1234,9 +1490,52 @@ function formatSigned(v: number, suffix = "") {
   return `${sign}${formatMoney(v)}${suffix}`;
 }
 
+function parseNum(v?: string | number): number {
+  if (v == null || v === "") return 0;
+  const n = Number.parseFloat(String(v).replace(/,/g, ""));
+  return Number.isNaN(n) ? 0 : n;
+}
+
+function buildKlineUrl(
+  stock: StockItem,
+  period: "min" | "daily" | "weekly" | "monthly",
+  refreshKey: number,
+) {
+  const code = (stock.code || "").toLowerCase();
+  if (!code) return "";
+  const normal = "https://image.sinajs.cn/newchart";
+  const usstock = "https://image.sinajs.cn/newchart/v5/usstock";
+  const hkstock = "https://image.sinajs.cn/newchart/hk_stock";
+  const cnFuture = "https://image.sinajs.cn/newchart/v5/futures/china";
+  const suffix = refreshKey ? `?v=${refreshKey}` : "";
+  if (code.startsWith("hk")) {
+    const symbol = code.replace(/^hk/, "");
+    return `${hkstock}/${period}/${symbol}.gif${suffix}`;
+  }
+  if (code.startsWith("usr_")) {
+    const symbol = code.replace(/^usr_/, "");
+    return `${usstock}/${period}/${symbol}.gif${suffix}`;
+  }
+  if (code.startsWith("nf_")) {
+    const symbol = code.replace(/^nf_/, "");
+    return `${cnFuture}/${period}/${symbol}.gif${suffix}`;
+  }
+  return `${normal}/${period}/n/${code}.gif${suffix}`;
+}
+
 function formatTime(ts: number) {
   const d = new Date(ts);
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}:${d.getSeconds().toString().padStart(2, "0")}`;
+}
+
+function formatNewsTime(pubDate?: string) {
+  if (!pubDate) return "—";
+  const d = new Date(pubDate);
+  if (Number.isNaN(d.getTime())) return pubDate;
+  return `${d.getMonth() + 1}/${d.getDate()} ${d
+    .getHours()
+    .toString()
+    .padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
 function formatDateTime(ts: number) {
@@ -1440,6 +1739,18 @@ function checkAlerts(list: StockItem[]) {
   if (touched) saveAlerts();
 }
 
+async function loadNews() {
+  newsLoading.value = true;
+  try {
+    newsList.value = await fetchNews(20);
+    newsLastUpdate.value = Date.now();
+  } catch (e) {
+    console.error(e);
+  } finally {
+    newsLoading.value = false;
+  }
+}
+
 watch(realtimeMode, (on) => {
   if (realtimeTimer) {
     clearInterval(realtimeTimer);
@@ -1474,20 +1785,44 @@ function refreshList() {
   loadStockList();
 }
 
-async function openAiAnalyze(row: StockItem) {
+function openKline(row: StockItem) {
+  klineStock.value = row;
+  klinePeriod.value = "daily";
+  refreshKline();
+  klineModal.value = true;
+}
+
+function refreshKline() {
+  klineRefreshKey.value = Date.now();
+}
+
+function openAiAnalyze(row: StockItem) {
   aiAnalyzeTarget.value = row;
   aiAnalyzeResult.value = null;
+  aiAnalyzeLoading.value = false;
   aiAnalyzeModal.value = true;
+}
+
+async function runAiAnalyze() {
+  if (!aiAnalyzeTarget.value) {
+    ElMessage.warning("请选择要分析的标的");
+    return;
+  }
   aiAnalyzeLoading.value = true;
+  aiAnalyzeResult.value = null;
   try {
     const result = await aiAnalyzeStockApi({
-      stock: row,
+      stock: aiAnalyzeTarget.value,
       horizon: aiPickHorizon.value,
       riskProfile: aiPickRisk.value,
     });
     aiAnalyzeResult.value = result;
     addAiAnalyzeHistory(
-      { stock: row, horizon: aiPickHorizon.value, riskProfile: aiPickRisk.value },
+      {
+        stock: aiAnalyzeTarget.value,
+        horizon: aiPickHorizon.value,
+        riskProfile: aiPickRisk.value,
+      },
       result,
     );
   } catch (e) {
@@ -1500,21 +1835,35 @@ async function openAiAnalyze(row: StockItem) {
 
 // (aiAnalyzeStockApi 已在 import 中 alias)
 
-async function openAiPick() {
+function openAiPickModal() {
+  aiPickModal.value = true;
+  aiPickLoading.value = false;
+}
+
+async function runAiPick() {
   if (!displayList.value.length) {
     ElMessage.warning("自选列表为空，先添加一些候选标的");
     return;
   }
-  aiPickModal.value = true;
   aiPickLoading.value = true;
   aiPickResult.value = null;
   try {
-    aiPickResult.value = await aiPickStocks({
+    const result = await aiPickStocks({
       candidates: displayList.value,
       topN: aiPickTopN.value,
       horizon: aiPickHorizon.value,
       riskProfile: aiPickRisk.value,
     });
+    aiPickResult.value = result;
+    addAiPickHistory(
+      {
+        topN: aiPickTopN.value,
+        horizon: aiPickHorizon.value,
+        riskProfile: aiPickRisk.value,
+        candidates: displayList.value.length,
+      },
+      result,
+    );
   } catch (e) {
     console.error(e);
     ElMessage.error("AI 选股失败：请检查 VOLCENGINE_API_KEY/模型ID 或服务是否可用");
@@ -1523,7 +1872,12 @@ async function openAiPick() {
   }
 }
 
-async function openAiSectorNow() {
+function openAiSectorModal() {
+  aiSectorModal.value = true;
+  aiSectorLoading.value = false;
+}
+
+async function runAiSectorNow() {
   aiSectorModal.value = true;
   aiSectorLoading.value = true;
   aiSectorResult.value = null;
@@ -1533,7 +1887,6 @@ async function openAiSectorNow() {
       topStockN: 40,
       horizon: aiPickHorizon.value,
       riskProfile: aiPickRisk.value,
-      mock:true
     };
     const result = await aiSectorNow(params);
     aiSectorResult.value = result;
@@ -1546,7 +1899,12 @@ async function openAiSectorNow() {
   }
 }
 
-async function openAiAfterClose() {
+function openAiAfterCloseModal() {
+  aiAfterCloseModal.value = true;
+  aiAfterCloseLoading.value = false;
+}
+
+async function runAiAfterClose() {
   aiAfterCloseModal.value = true;
   aiAfterCloseLoading.value = true;
   aiAfterCloseResult.value = null;
@@ -1613,6 +1971,26 @@ function addAiAnalyzeHistory(
     result,
   };
   aiAnalyzeHistory.value = [item, ...aiAnalyzeHistory.value].slice(
+    0,
+    AI_HISTORY_LIMIT,
+  );
+  saveAiHistory();
+}
+
+function addAiPickHistory(
+  params: { topN: number; horizon: string; riskProfile: string; candidates: number },
+  result: AiPickResult,
+) {
+  const item: AiHistoryItem<
+    AiPickResult,
+    { topN: number; horizon: string; riskProfile: string; candidates: number }
+  > = {
+    id: createHistoryId(),
+    ts: Date.now(),
+    params,
+    result,
+  };
+  aiPickHistory.value = [item, ...aiPickHistory.value].slice(
     0,
     AI_HISTORY_LIMIT,
   );
@@ -1692,6 +2070,19 @@ function applyAiAnalyzeHistory(
   aiAnalyzeModal.value = true;
 }
 
+function applyAiPickHistory(
+  item: AiHistoryItem<
+    AiPickResult,
+    { topN: number; horizon: string; riskProfile: string; candidates: number }
+  >,
+) {
+  aiPickTopN.value = item.params.topN;
+  aiPickHorizon.value = item.params.horizon;
+  aiPickRisk.value = item.params.riskProfile;
+  aiPickResult.value = item.result;
+  aiPickModal.value = true;
+}
+
 function applyAiSectorHistory(
   item: AiHistoryItem<
     AiSectorNowResult,
@@ -1731,7 +2122,17 @@ function applyAiScreenHistory(
 }
 
 function clearAiAnalyzeHistory() {
-  aiAnalyzeHistory.value = [];
+  const target = aiAnalyzeTarget.value;
+  if (!target?.code) return;
+  const codeLower = target.code.toLowerCase();
+  aiAnalyzeHistory.value = aiAnalyzeHistory.value.filter(
+    (item) => (item.params.stock?.code || "").toLowerCase() !== codeLower,
+  );
+  saveAiHistory();
+}
+
+function clearAiPickHistory() {
+  aiPickHistory.value = [];
   saveAiHistory();
 }
 
@@ -1762,6 +2163,11 @@ function removeCode(code: string) {
     delete stockPrice.value[key];
     saveStockPrice();
   }
+  // 移除该股票的 AI 分析历史
+  aiAnalyzeHistory.value = aiAnalyzeHistory.value.filter(
+    (item) => (item.params.stock?.code || "").toLowerCase() !== lower,
+  );
+  saveAiHistory();
   loadStockList();
 }
 
@@ -1863,6 +2269,7 @@ onMounted(() => {
   loadAiHistory();
   updateGroupDrafts();
   loadStockList();
+  loadNews();
 });
 onUnmounted(() => {
   if (realtimeTimer) {
@@ -2029,6 +2436,42 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.35rem;
 }
+.news-panel {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+}
+.news-panel h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.news-list {
+  margin-top: 0.5rem;
+}
+.news-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.news-items li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.news-items a {
+  color: var(--text);
+  text-decoration: none;
+  flex: 1;
+}
+.news-items a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
 .group-select {
   min-width: 120px;
 }
@@ -2063,6 +2506,11 @@ onUnmounted(() => {
 }
 .down {
   color: var(--down);
+}
+
+.ai-dialog :deep(.el-dialog__body) {
+  max-height: 70vh;
+  overflow: auto;
 }
 
 .ai-block {
@@ -2116,6 +2564,58 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 90px 1fr;
   gap: 0.75rem;
+}
+.kline-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.kline-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.75rem;
+}
+.kline-image {
+  width: 100%;
+  max-width: 800px;
+}
+.trade-tools {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+.trade-block {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+.trade-title {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.trade-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.trade-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.trade-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 .ai-label {
   color: var(--text-muted);
