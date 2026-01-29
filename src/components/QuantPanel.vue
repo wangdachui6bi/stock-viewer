@@ -375,10 +375,9 @@ try {
 }
 watch(preset, (v) => {
   localStorage.setItem(STORAGE_PRESET_KEY, JSON.stringify(v))
+  // 切换预设时立即应用到参数
+  applyPreset()
 })
-
-// 启动时应用一次预设（不打扰用户的其他设置）
-applyPreset()
 
 // 策略参数（可调）
 const reversalParams = ref({
@@ -451,6 +450,10 @@ function applyPreset() {
     }
   }
 }
+
+// 初始化时应用一次预设
+applyPreset()
+
 const params = computed<StrategyParams>(() => ({
   reversal: reversalParams.value,
   swing: swingParams.value,
