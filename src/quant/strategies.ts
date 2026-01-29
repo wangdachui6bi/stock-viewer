@@ -73,17 +73,17 @@ export function analyzeReversalRSI(bars: KlineBar[], p?: ReversalParams): Strate
   let score = 0
   if (r != null) {
     if (r < extreme) {
-      reasons.push(`RSI(${rsiPeriod})=${r.toFixed(1)}，极度超卖`)
+      reasons.push(`跌得很厉害（指标=${r.toFixed(1)}）`)
       score += 40
     } else if (r < oversold) {
-      reasons.push(`RSI(${rsiPeriod})=${r.toFixed(1)}，超卖区`)
+      reasons.push(`近期偏弱（指标=${r.toFixed(1)}）`)
       score += 25
     }
   }
 
   // 反转确认：收盘上穿短均线 或者 今日收阳且高于昨日收盘
   if (maFast[i] != null && c > (maFast[i] as number)) {
-    reasons.push(`收盘站上MA${confirmMa}，短线转强`)
+    reasons.push('今天开始走强（收盘比近几天均价高）')
     score += 20
   }
   if (c > prev) {
@@ -93,10 +93,10 @@ export function analyzeReversalRSI(bars: KlineBar[], p?: ReversalParams): Strate
 
   // 如果仍在趋势均线下方，认为是“反转尝试”而非趋势
   if (maTrend[i] != null && c < (maTrend[i] as number)) {
-    reasons.push(`仍在MA${trendMa}下方，定位为反转博弈`)
+    reasons.push('整体还没走强，只适合小仓位试错')
     score += 5
   } else if (maTrend[i] != null) {
-    reasons.push(`站上MA${trendMa}，反转更稳`)
+    reasons.push('整体开始转强（价格回到关键均线之上）')
     score += 10
   }
 
@@ -148,10 +148,10 @@ export function analyzeSwingPullback(bars: KlineBar[], p?: SwingParams): Strateg
   const maTNow = maTrend[i]
   const maTPrev = maTrend[i - slopeLookback]
   if (maTNow != null && maTPrev != null && maTNow > maTPrev) {
-    reasons.push(`MA${trendMa} 上行，趋势偏多`)
+    reasons.push('整体趋势向上（均线在抬升）')
     score += 30
   } else {
-    reasons.push(`MA${trendMa} 未明显上行，趋势不强`)
+    reasons.push('整体趋势不明显（更容易来回震荡）')
   }
 
   // 回踩：价格接近 pullback 均线
@@ -159,17 +159,17 @@ export function analyzeSwingPullback(bars: KlineBar[], p?: SwingParams): Strateg
   if (maPNow != null) {
     const distPct = (Math.abs(c - maPNow) / maPNow) * 100
     if (distPct <= strongDist) {
-      reasons.push(`回踩MA${pullbackMa}（偏差 ${distPct.toFixed(2)}%）`)
+      reasons.push(`价格回到“合理位置”附近（离均线约 ${distPct.toFixed(2)}%）`)
       score += 30
     } else if (distPct <= weakDist) {
-      reasons.push(`接近MA${pullbackMa}（偏差 ${distPct.toFixed(2)}%）`)
+      reasons.push(`价格接近“合理位置”（离均线约 ${distPct.toFixed(2)}%）`)
       score += 15
     }
   }
 
   // 强势确认：收盘不破 pullback 均线
   if (maPNow != null && c >= maPNow) {
-    reasons.push(`收盘不破MA${pullbackMa}，回踩有效`)
+    reasons.push('回踩后没继续跌（回踩有效）')
     score += 20
   }
 
@@ -208,6 +208,6 @@ export function runStrategy(strategy: StrategyId, bars: KlineBar[], params?: Str
 }
 
 export const STRATEGY_LABEL: Record<StrategyId, string> = {
-  reversal_rsi: '反转：RSI超卖反弹',
-  swing_pullback: '波段：MA20趋势 + 回踩MA10',
+  reversal_rsi: '抄底尝试：跌多了回弹（短线）',
+  swing_pullback: '波段：上升趋势回踩再上（偏稳）',
 }

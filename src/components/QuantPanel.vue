@@ -42,30 +42,30 @@
       </el-form>
 
       <div class="params" v-if="strategy === 'reversal_rsi'">
-        <span class="muted">反转参数：</span>
-        <span class="muted">RSI超卖</span>
+        <span class="muted">抄底尝试的参数：</span>
+        <span class="muted">“跌得很厉害”阈值</span>
         <el-input-number v-model="reversalParams.oversold" :min="10" :max="50" :step="1" />
-        <span class="muted">极度超卖</span>
+        <span class="muted">“极端下跌”阈值</span>
         <el-input-number v-model="reversalParams.extremeOversold" :min="5" :max="40" :step="1" />
-        <span class="muted">ATR止损倍数</span>
+        <span class="muted">止损距离（按波动）</span>
         <el-input-number v-model="reversalParams.atrStopMult" :min="0.5" :max="5" :step="0.1" />
-        <span class="muted">ATR止盈倍数</span>
+        <span class="muted">止盈距离（按波动）</span>
         <el-input-number v-model="reversalParams.atrTakeMult" :min="0.5" :max="8" :step="0.1" />
       </div>
       <div class="params" v-else>
-        <span class="muted">波段参数：</span>
-        <span class="muted">趋势MA</span>
+        <span class="muted">波段策略的参数：</span>
+        <span class="muted">看大方向（天数）</span>
         <el-input-number v-model="swingParams.trendMa" :min="5" :max="60" :step="1" />
-        <span class="muted">回踩MA</span>
+        <span class="muted">看回踩（天数）</span>
         <el-input-number v-model="swingParams.pullbackMa" :min="3" :max="40" :step="1" />
-        <span class="muted">接近%（强）</span>
+        <span class="muted">“很接近”距离%</span>
         <el-input-number v-model="swingParams.pullbackDistStrongPct" :min="0.2" :max="5" :step="0.1" />
-        <span class="muted">接近%（弱）</span>
+        <span class="muted">“接近”距离%</span>
         <el-input-number v-model="swingParams.pullbackDistWeakPct" :min="0.2" :max="8" :step="0.1" />
       </div>
 
       <div class="muted small">
-        说明：量化信号仅基于K线指标（A股），不构成投资建议。
+        说明：这里只是用历史价格做“规则筛选”，帮你更快挑出值得关注的票；不构成投资建议。
       </div>
     </div>
 
