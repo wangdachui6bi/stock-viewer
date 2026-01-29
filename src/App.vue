@@ -28,191 +28,208 @@
         @search="onSearch"
         @select="onSelectSearchItem"
       />
-      <section class="tools-section">
-        <div class="section-head">
+      <section class="tools-section" :class="{ 'tools-section--collapsed': toolsCollapsed }">
+        <div class="section-head tools-section-head">
           <div class="section-title-row">
             <h2>交易工具</h2>
             <span class="last-update">持仓 {{ portfolioSummary.holdingCount }} 只</span>
           </div>
           <div class="actions">
-            <el-button size="small" @click="requestNotificationPermission">
-              通知权限
+            <el-button
+              link
+              size="small"
+              type="primary"
+              @click="toolsCollapsed = !toolsCollapsed"
+            >
+              {{ toolsCollapsed ? "展开" : "收起" }}
             </el-button>
-            <div class="realtime-wrap">
-              <span class="realtime-label">隐藏市值</span>
-              <el-switch
-                v-model="hideMarketValue"
-                size="default"
-                inline-prompt
-                active-text="开"
-                inactive-text="关"
-              />
-            </div>
-          </div>
-        </div>
-        <div class="summary-grid">
-          <div class="summary-card">
-            <div class="summary-label">持仓市值</div>
-            <div class="summary-value" :class="{ masked: hideMarketValue }">
-              {{
-                hideMarketValue
-                  ? "****"
-                  : formatMoney(portfolioSummary.currentValue)
-              }}
-            </div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-label">持仓成本</div>
-            <div class="summary-value" :class="{ masked: hideMarketValue }">
-              {{ hideMarketValue ? "****" : formatMoney(portfolioSummary.totalCost) }}
-            </div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-label">总盈亏</div>
-            <div
-              class="summary-value"
-              :class="
-                portfolioSummary.totalEarnings > 0
-                  ? 'down'
-                  : portfolioSummary.totalEarnings < 0
-                    ? 'up'
-                    : ''
-              "
-            >
-              {{
-                hideMarketValue
-                  ? "****"
-                  : formatSigned(portfolioSummary.totalEarnings)
-              }}
-            </div>
-            <div class="summary-sub">
-              {{ hideMarketValue ? "****" : formatSigned(portfolioSummary.totalPct, '%') }}
-            </div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-label">今日盈亏</div>
-            <div
-              class="summary-value"
-              :class="
-                portfolioSummary.todayEarnings > 0
-                  ? 'down'
-                  : portfolioSummary.todayEarnings < 0
-                    ? 'up'
-                    : ''
-              "
-            >
-              {{ formatSigned(portfolioSummary.todayEarnings) }}
-            </div>
-          </div>
-        </div>
-        <div class="alerts-panel">
-          <div class="alerts-form">
-            <el-select
-              v-model="alertForm.code"
-              filterable
-              allow-create
-              default-first-option
-              placeholder="选择股票 / 输入代码"
-              class="alert-select"
-            >
-              <el-option
-                v-for="item in alertStockOptions"
-                :key="item.code"
-                :label="`${item.name} (${item.code})`"
-                :value="item.code"
-              />
-            </el-select>
-            <el-select v-model="alertForm.type" class="alert-type">
-              <el-option label="价格" value="price" />
-              <el-option label="涨跌幅" value="percent" />
-            </el-select>
-            <el-select v-model="alertForm.operator" class="alert-op">
-              <el-option label="≥" value=">=" />
-              <el-option label="≤" value="<=" />
-            </el-select>
-            <el-input-number
-              v-model="alertForm.value"
-              :step="0.01"
-              :precision="2"
-              class="alert-value"
-            />
-            <el-button type="primary" @click="addAlert">添加提醒</el-button>
-          </div>
-          <div class="alerts-list">
-            <el-empty
-              v-if="!alerts.length"
-              description="暂无提醒，添加后价格触达会通知"
-            />
-            <el-table v-else :data="alerts" size="small" stripe>
-              <el-table-column label="股票" min-width="140">
-                <template #default="{ row }">
-                  <div class="alert-name">
-                    <span>{{ row.name || row.code }}</span>
-                    <span class="muted">({{ row.code }})</span>
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column label="条件" min-width="150">
-                <template #default="{ row }">
-                  {{ formatAlertCondition(row) }}
-                </template>
-              </el-table-column>
-              <el-table-column label="上次触发" width="110">
-                <template #default="{ row }">
-                  {{ formatAlertLastTime(row.lastTriggered) }}
-                </template>
-              </el-table-column>
-              <el-table-column label="状态" width="90">
-                <template #default="{ row }">
-                  <el-switch
-                    v-model="row.enabled"
-                    @change="toggleAlert(row, $event)"
-                  />
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="80">
-                <template #default="{ row }">
-                  <el-button
-                    link
-                    type="danger"
-                    size="small"
-                    @click="removeAlert(row.id)"
-                  >
-                    删除
-                  </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </div>
-        </div>
-        <div class="news-panel">
-          <div class="section-head">
-            <div class="section-title-row">
-              <h3>资讯</h3>
-              <span v-if="newsLastUpdate" class="last-update">
-                更新于 {{ formatTime(newsLastUpdate) }}
-              </span>
-            </div>
-            <div class="actions">
-              <el-button size="small" :loading="newsLoading" @click="loadNews">
-                刷新
+            <template v-if="!toolsCollapsed">
+              <el-button size="small" @click="requestNotificationPermission">
+                通知权限
               </el-button>
+              <div class="realtime-wrap">
+                <span class="realtime-label">隐藏市值</span>
+                <el-switch
+                  v-model="hideMarketValue"
+                  size="default"
+                  inline-prompt
+                  active-text="开"
+                  inactive-text="关"
+                />
+              </div>
+            </template>
+          </div>
+        </div>
+        <div v-show="!toolsCollapsed" class="tools-section-body">
+        <el-tabs v-model="toolsTab" class="tools-tabs">
+          <el-tab-pane label="概览" name="overview">
+            <div class="summary-grid">
+              <div class="summary-card">
+                <div class="summary-label">持仓市值</div>
+                <div class="summary-value" :class="{ masked: hideMarketValue }">
+                  {{
+                    hideMarketValue
+                      ? "****"
+                      : formatMoney(portfolioSummary.currentValue)
+                  }}
+                </div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-label">持仓成本</div>
+                <div class="summary-value" :class="{ masked: hideMarketValue }">
+                  {{ hideMarketValue ? "****" : formatMoney(portfolioSummary.totalCost) }}
+                </div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-label">总盈亏</div>
+                <div
+                  class="summary-value"
+                  :class="
+                    portfolioSummary.totalEarnings > 0
+                      ? 'down'
+                      : portfolioSummary.totalEarnings < 0
+                        ? 'up'
+                        : ''
+                  "
+                >
+                  {{
+                    hideMarketValue
+                      ? "****"
+                      : formatSigned(portfolioSummary.totalEarnings)
+                  }}
+                </div>
+                <div class="summary-sub">
+                  {{ hideMarketValue ? "****" : formatSigned(portfolioSummary.totalPct, '%') }}
+                </div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-label">今日盈亏</div>
+                <div
+                  class="summary-value"
+                  :class="
+                    portfolioSummary.todayEarnings > 0
+                      ? 'down'
+                      : portfolioSummary.todayEarnings < 0
+                        ? 'up'
+                        : ''
+                  "
+                >
+                  {{ formatSigned(portfolioSummary.todayEarnings) }}
+                </div>
+              </div>
             </div>
-          </div>
-          <div class="news-list">
-            <el-empty
-              v-if="!newsLoading && !newsList.length"
-              description="暂无资讯"
-            />
-            <ul v-else class="news-items">
-              <li v-for="item in newsList" :key="item.link || item.title">
-                <a :href="item.link" target="_blank" rel="noopener">
-                  {{ item.title }}
-                </a>
-                <span class="muted">{{ formatNewsTime(item.pubDate) }}</span>
-              </li>
-            </ul>
-          </div>
+          </el-tab-pane>
+          <el-tab-pane label="提醒" name="alerts">
+            <div class="alerts-panel">
+              <div class="alerts-form">
+                <el-select
+                  v-model="alertForm.code"
+                  filterable
+                  allow-create
+                  default-first-option
+                  placeholder="选择股票 / 输入代码"
+                  class="alert-select"
+                >
+                  <el-option
+                    v-for="item in alertStockOptions"
+                    :key="item.code"
+                    :label="`${item.name} (${item.code})`"
+                    :value="item.code"
+                  />
+                </el-select>
+                <el-select v-model="alertForm.type" class="alert-type">
+                  <el-option label="价格" value="price" />
+                  <el-option label="涨跌幅" value="percent" />
+                </el-select>
+                <el-select v-model="alertForm.operator" class="alert-op">
+                  <el-option label="≥" value=">=" />
+                  <el-option label="≤" value="<=" />
+                </el-select>
+                <el-input-number
+                  v-model="alertForm.value"
+                  :step="0.01"
+                  :precision="2"
+                  class="alert-value"
+                />
+                <el-button type="primary" @click="addAlert">添加提醒</el-button>
+              </div>
+              <div class="alerts-list">
+                <el-empty
+                  v-if="!alerts.length"
+                  description="暂无提醒，添加后价格触达会通知"
+                />
+                <el-table v-else :data="alerts" size="small" stripe>
+                  <el-table-column label="股票" min-width="140">
+                    <template #default="{ row }">
+                      <div class="alert-name">
+                        <span>{{ row.name || row.code }}</span>
+                        <span class="muted">({{ row.code }})</span>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="条件" min-width="150">
+                    <template #default="{ row }">
+                      {{ formatAlertCondition(row) }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="上次触发" width="110">
+                    <template #default="{ row }">
+                      {{ formatAlertLastTime(row.lastTriggered) }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="状态" width="90">
+                    <template #default="{ row }">
+                      <el-switch
+                        v-model="row.enabled"
+                        @change="toggleAlert(row, $event)"
+                      />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="80">
+                    <template #default="{ row }">
+                      <el-button
+                        link
+                        type="danger"
+                        size="small"
+                        @click="removeAlert(row.id)"
+                      >
+                        删除
+                      </el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="资讯" name="news">
+            <div class="news-panel-inner">
+              <div class="section-head">
+                <div class="section-title-row">
+                  <span class="last-update" v-if="newsLastUpdate">
+                    更新于 {{ formatTime(newsLastUpdate) }}
+                  </span>
+                </div>
+                <el-button size="small" :loading="newsLoading" @click="loadNews">
+                  刷新
+                </el-button>
+              </div>
+              <div class="news-list">
+                <el-empty
+                  v-if="!newsLoading && !newsList.length"
+                  description="暂无资讯"
+                />
+                <ul v-else class="news-items">
+                  <li v-for="item in newsList" :key="item.link || item.title">
+                    <a :href="item.link" target="_blank" rel="noopener">
+                      {{ item.title }}
+                    </a>
+                    <span class="muted">{{ formatNewsTime(item.pubDate) }}</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
         </div>
       </section>
       <section class="watchlist-section">
@@ -227,18 +244,20 @@
             </span>
           </div>
           <div class="actions">
-            <el-button type="success" plain @click="openAiPickModal">
-              AI 选股
-            </el-button>
-            <el-button type="primary" plain @click="openAiSectorModal">
-              板块最强
-            </el-button>
-            <el-button type="warning" plain @click="openAiAfterCloseModal">
-              收盘复盘
-            </el-button>
-            <el-button plain @click="openAiScreenModal">
-              条件选股
-            </el-button>
+            <el-dropdown trigger="click" @command="handleAiCommand">
+              <el-button type="primary" plain>
+                AI / 选股
+                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="pick">AI 选股</el-dropdown-item>
+                  <el-dropdown-item command="sector">板块最强</el-dropdown-item>
+                  <el-dropdown-item command="afterClose">收盘复盘</el-dropdown-item>
+                  <el-dropdown-item command="screen">条件选股</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <el-select
               v-model="currentGroupId"
               size="small"
@@ -966,6 +985,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, computed } from "vue";
 import { ElMessage } from "element-plus";
+import { ArrowDown } from "@element-plus/icons-vue";
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 import StockSearch from "./components/StockSearch.vue";
 import StockTable from "./components/StockTable.vue";
@@ -1060,6 +1080,8 @@ const groupManageModal = ref(false);
 const newGroupName = ref("");
 const groupDrafts = ref<Record<string, string>>({});
 const hideMarketValue = ref(false);
+const toolsTab = ref<"overview" | "alerts" | "news">("overview");
+const toolsCollapsed = ref(false);
 const holdingFilter = ref<"all" | "holding" | "not_holding">("all");
 const groupAssignModal = ref(false);
 const groupAssignStock = ref<StockItem | null>(null);
@@ -1835,6 +1857,13 @@ async function runAiAnalyze() {
 
 // (aiAnalyzeStockApi 已在 import 中 alias)
 
+function handleAiCommand(command: string) {
+  if (command === "pick") openAiPickModal();
+  else if (command === "sector") openAiSectorModal();
+  else if (command === "afterClose") openAiAfterCloseModal();
+  else if (command === "screen") openAiScreenModal();
+}
+
 function openAiPickModal() {
   aiPickModal.value = true;
   aiPickLoading.value = false;
@@ -2343,6 +2372,30 @@ onUnmounted(() => {
   border-radius: var(--radius);
   padding: 1.25rem 1.5rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.tools-section--collapsed .tools-section-head {
+  margin-bottom: 0;
+}
+.tools-section-body {
+  margin-top: 0.25rem;
+}
+.tools-section-head {
+  margin-bottom: 0.75rem;
+}
+.tools-tabs :deep(.el-tabs__header) {
+  margin-bottom: 1rem;
+}
+.tools-tabs :deep(.el-tabs__item) {
+  font-size: 0.9rem;
+}
+.tools-tabs :deep(.el-tabs__content) {
+  overflow: visible;
+}
+.news-panel-inner .section-head {
+  margin-bottom: 0.5rem;
+}
+.news-panel-inner .news-list {
+  margin-top: 0;
 }
 .section-head {
   display: flex;
