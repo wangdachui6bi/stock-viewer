@@ -29,6 +29,15 @@
             <el-switch v-model="beginnerMode" inline-prompt active-text="开" inactive-text="关" />
           </el-tooltip>
         </el-form-item>
+        <el-form-item label="预设">
+          <el-tooltip content="选择一套参数风格：激进=更容易给信号但更抖；保守=更少信号但更稳。" placement="bottom">
+            <el-select v-model="preset" style="width: 140px" @change="applyPreset">
+              <el-option label="中等(推荐)" value="balanced" />
+              <el-option label="激进" value="aggressive" />
+              <el-option label="保守" value="conservative" />
+            </el-select>
+          </el-tooltip>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="loading" @click="runScan">
             扫描当前列表
@@ -354,6 +363,22 @@ watch(beginnerMode, (v) => {
   localStorage.setItem(STORAGE_BEGINNER_KEY, JSON.stringify(!!v))
 })
 
+// 预设模式（激进/中等/保守）
+const STORAGE_PRESET_KEY = 'vue-stock-viewer-quantPreset'
+const preset = ref<'aggressive' | 'balanced' | 'conservative'>('balanced')
+try {
+  const raw = localStorage.getItem(STORAGE_PRESET_KEY)
+  preset.value = raw ? JSON.parse(raw) : 'balanced'
+} catch {
+  preset.value = 'balanced'
+}
+watch(preset, (v) => {
+  localStorage.setItem(STORAGE_PRESET_KEY, JSON.stringify(v))
+})
+
+// 启动时应用一次预设（不打扰用户的其他设置）
+applyPreset()
+
 // 策略参数（可调）
 const reversalParams = ref({
   oversold: 30,
@@ -372,6 +397,59 @@ const swingParams = ref({
   atrStopMult: 1.0,
   atrTakeMult: 2.2,
 })
+
+function applyPreset() {
+  // 只调“新手模式下会看到的关键参数”，避免把用户搞乱
+  if (preset.value === 'aggressive') {
+    // 更敏感：更容易提示，但止损更紧
+    reversalParams.value = {
+      ...reversalParams.value,
+      oversold: 34,
+      extremeOversold: 28,
+      atrStopMult: 0.9,
+      atrTakeMult: 1.6,
+    }
+    swingParams.value = {
+      ...swingParams.value,
+      trendMa: 15,
+      pullbackMa: 8,
+      pullbackDistWeakPct: 2.5,
+      pullbackDistStrongPct: 1.3,
+    }
+  } else if (preset.value === 'conservative') {
+    // 更保守：更少信号，但更稳
+    reversalParams.value = {
+      ...reversalParams.value,
+      oversold: 28,
+      extremeOversold: 22,
+      atrStopMult: 1.6,
+      atrTakeMult: 2.6,
+    }
+    swingParams.value = {
+      ...swingParams.value,
+      trendMa: 30,
+      pullbackMa: 12,
+      pullbackDistWeakPct: 1.2,
+      pullbackDistStrongPct: 0.7,
+    }
+  } else {
+    // balanced
+    reversalParams.value = {
+      ...reversalParams.value,
+      oversold: 30,
+      extremeOversold: 25,
+      atrStopMult: 1.2,
+      atrTakeMult: 2.0,
+    }
+    swingParams.value = {
+      ...swingParams.value,
+      trendMa: 20,
+      pullbackMa: 10,
+      pullbackDistWeakPct: 2,
+      pullbackDistStrongPct: 1,
+    }
+  }
+}
 const params = computed<StrategyParams>(() => ({
   reversal: reversalParams.value,
   swing: swingParams.value,
