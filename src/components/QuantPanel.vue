@@ -187,11 +187,12 @@
           </ul>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right" align="center">
+      <el-table-column label="操作" width="300" fixed="right" align="center">
         <template #default="{ row }">
           <el-button size="small" @click="copyPlan(row)">复制计划</el-button>
           <el-button size="small" type="primary" plain @click="openBacktest(row)">回测</el-button>
           <el-button size="small" type="success" plain @click="saveToJournal(row)">记日志</el-button>
+          <el-button size="small" type="warning" plain @click="openRiskFromRow(row)">算仓位</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -566,6 +567,12 @@ async function copyPlan(row: Row) {
 const riskOpen = ref(false)
 const riskForm = ref({ equity: 100000, riskPct: 1, entry: 0, stop: 0, lotSize: 100 })
 const riskResult = computed(() => positionSizing(riskForm.value))
+
+function openRiskFromRow(row: Row) {
+  if (row.entry) riskForm.value.entry = row.entry
+  if (row.stop) riskForm.value.stop = row.stop
+  riskOpen.value = true
+}
 
 const btOpen = ref(false)
 const btLoading = ref(false)
