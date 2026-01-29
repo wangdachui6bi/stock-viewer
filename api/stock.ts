@@ -1,5 +1,5 @@
 import axios from 'axios'
-import iconv from 'iconv-lite'
+import * as iconv from 'iconv-lite'
 import { parseQuery, readBody, sendJson, setCors } from './_lib/http'
 import { parseSinaStockResponse } from './_lib/parser'
 
