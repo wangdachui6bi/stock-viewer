@@ -19,8 +19,15 @@
             <el-option label="月K" value="monthly" />
           </el-select>
         </el-form-item>
-        <el-form-item label="回测持有">
-          <el-input-number v-model="holdMaxBars" :min="3" :max="30" />
+        <el-form-item label="回测持有(天)">
+          <el-tooltip content="回测里最多拿多久：比如 10 表示最多持有 10 根K线（约10天/10周/10月，取决于你选的周期）" placement="bottom">
+            <el-input-number v-model="holdMaxBars" :min="3" :max="30" />
+          </el-tooltip>
+        </el-form-item>
+        <el-form-item label="新手模式">
+          <el-tooltip content="开启后只显示更容易理解的少量参数，并在每个参数旁边加解释。" placement="bottom">
+            <el-switch v-model="beginnerMode" inline-prompt active-text="开" inactive-text="关" />
+          </el-tooltip>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="loading" @click="runScan">
@@ -43,25 +50,84 @@
 
       <div class="params" v-if="strategy === 'reversal_rsi'">
         <span class="muted">抄底尝试的参数：</span>
-        <span class="muted">“跌得很厉害”阈值</span>
-        <el-input-number v-model="reversalParams.oversold" :min="10" :max="50" :step="1" />
-        <span class="muted">“极端下跌”阈值</span>
-        <el-input-number v-model="reversalParams.extremeOversold" :min="5" :max="40" :step="1" />
-        <span class="muted">止损距离（按波动）</span>
-        <el-input-number v-model="reversalParams.atrStopMult" :min="0.5" :max="5" :step="0.1" />
-        <span class="muted">止盈距离（按波动）</span>
-        <el-input-number v-model="reversalParams.atrTakeMult" :min="0.5" :max="8" :step="0.1" />
+
+        <template v-if="beginnerMode">
+          <span class="muted help">
+            跌得很厉害
+            <el-tooltip content="越小越‘严格’，只有跌得特别多才会提示；越大越‘敏感’，更容易提示。建议：30 左右。" placement="bottom">
+              <el-icon><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </span>
+          <el-input-number v-model="reversalParams.oversold" :min="10" :max="50" :step="1" />
+
+          <span class="muted help">
+            止损距离（按波动）
+            <el-tooltip content="越大：止损更宽松（不容易被震出去）；越小：止损更紧（更容易止损）。建议：1.0~1.5。" placement="bottom">
+              <el-icon><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </span>
+          <el-input-number v-model="reversalParams.atrStopMult" :min="0.5" :max="5" :step="0.1" />
+
+          <span class="muted help">
+            止盈距离（按波动）
+            <el-tooltip content="越大：目标更远（可能更难到）；越小：更容易到但收益可能偏小。建议：1.8~2.5。" placement="bottom">
+              <el-icon><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </span>
+          <el-input-number v-model="reversalParams.atrTakeMult" :min="0.5" :max="8" :step="0.1" />
+        </template>
+
+        <template v-else>
+          <span class="muted">“跌得很厉害”阈值</span>
+          <el-input-number v-model="reversalParams.oversold" :min="10" :max="50" :step="1" />
+          <span class="muted">“极端下跌”阈值</span>
+          <el-input-number v-model="reversalParams.extremeOversold" :min="5" :max="40" :step="1" />
+          <span class="muted">止损距离（按波动）</span>
+          <el-input-number v-model="reversalParams.atrStopMult" :min="0.5" :max="5" :step="0.1" />
+          <span class="muted">止盈距离（按波动）</span>
+          <el-input-number v-model="reversalParams.atrTakeMult" :min="0.5" :max="8" :step="0.1" />
+        </template>
       </div>
+
       <div class="params" v-else>
         <span class="muted">波段策略的参数：</span>
-        <span class="muted">看大方向（天数）</span>
-        <el-input-number v-model="swingParams.trendMa" :min="5" :max="60" :step="1" />
-        <span class="muted">看回踩（天数）</span>
-        <el-input-number v-model="swingParams.pullbackMa" :min="3" :max="40" :step="1" />
-        <span class="muted">“很接近”距离%</span>
-        <el-input-number v-model="swingParams.pullbackDistStrongPct" :min="0.2" :max="5" :step="0.1" />
-        <span class="muted">“接近”距离%</span>
-        <el-input-number v-model="swingParams.pullbackDistWeakPct" :min="0.2" :max="8" :step="0.1" />
+
+        <template v-if="beginnerMode">
+          <span class="muted help">
+            看大方向（天数）
+            <el-tooltip content="越大：更看重长期趋势（更稳但更慢）；越小：更看重短期（更灵敏但更容易误判）。建议：20。" placement="bottom">
+              <el-icon><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </span>
+          <el-input-number v-model="swingParams.trendMa" :min="5" :max="60" :step="1" />
+
+          <span class="muted help">
+            看回踩（天数）
+            <el-tooltip content="越小：回踩更贴近价格（更灵敏）；越大：回踩更宽（更稳）。建议：10。" placement="bottom">
+              <el-icon><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </span>
+          <el-input-number v-model="swingParams.pullbackMa" :min="3" :max="40" :step="1" />
+
+          <span class="muted help">
+            “接近合理位置”距离%
+            <el-tooltip content="价格离回踩均线的距离。越小越苛刻（必须贴得更近）；越大更宽松。建议：1%~2%。" placement="bottom">
+              <el-icon><QuestionFilled /></el-icon>
+            </el-tooltip>
+          </span>
+          <el-input-number v-model="swingParams.pullbackDistWeakPct" :min="0.2" :max="8" :step="0.1" />
+        </template>
+
+        <template v-else>
+          <span class="muted">看大方向（天数）</span>
+          <el-input-number v-model="swingParams.trendMa" :min="5" :max="60" :step="1" />
+          <span class="muted">看回踩（天数）</span>
+          <el-input-number v-model="swingParams.pullbackMa" :min="3" :max="40" :step="1" />
+          <span class="muted">“很接近”距离%</span>
+          <el-input-number v-model="swingParams.pullbackDistStrongPct" :min="0.2" :max="5" :step="0.1" />
+          <span class="muted">“接近”距离%</span>
+          <el-input-number v-model="swingParams.pullbackDistWeakPct" :min="0.2" :max="8" :step="0.1" />
+        </template>
       </div>
 
       <div class="muted small">
@@ -227,8 +293,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import type { StockItem } from '@/types/stock'
 import type { KlinePeriod } from '@/types/kline'
 import { fetchKline } from '@/api/kline'
@@ -273,6 +340,19 @@ const aCandidates = computed(() =>
 const strategy = ref<StrategyId>('reversal_rsi')
 const period = ref<KlinePeriod>('daily')
 const holdMaxBars = ref(10)
+
+// 新手模式：减少术语 + 给出解释
+const STORAGE_BEGINNER_KEY = 'vue-stock-viewer-quantBeginnerMode'
+const beginnerMode = ref(true)
+try {
+  const raw = localStorage.getItem(STORAGE_BEGINNER_KEY)
+  beginnerMode.value = raw ? JSON.parse(raw) : true
+} catch {
+  beginnerMode.value = true
+}
+watch(beginnerMode, (v) => {
+  localStorage.setItem(STORAGE_BEGINNER_KEY, JSON.stringify(!!v))
+})
 
 // 策略参数（可调）
 const reversalParams = ref({
@@ -489,6 +569,16 @@ async function openBacktest(row: Row) {
   gap: 8px;
   flex-wrap: wrap;
   margin: 8px 0;
+}
+.help {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.help :deep(.el-icon) {
+  font-size: 14px;
+  opacity: 0.85;
+  cursor: help;
 }
 .journal {
   margin-top: 8px;
