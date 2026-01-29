@@ -26,6 +26,12 @@ type EastmoneyClistResp = {
   };
 };
 
+type EastmoneyKlineResp = {
+  data?: {
+    klines?: string[];
+  };
+};
+
 function previewValue(value: unknown, limit = 400) {
   if (value == null) return value;
   let text = "";
@@ -302,6 +308,51 @@ async function fetchNewsHeadlines(limit = 10) {
     return titles;
   } catch {
     return [];
+  }
+}
+
+async function fetchEastmoneyKline(params: {
+  code: string;
+  period: "daily" | "weekly" | "monthly";
+  count: number;
+}) {
+  const { code, period, count } = params;
+  const pure = String(code || "").toLowerCase();
+  const digits = pure.replace(/^(sh|sz|bj)/, "");
+  const market = pure.startsWith("sh") ? 1 : 0;
+  const secid = `${market}.${digits}`;
+  const kltMap: Record<string, number> = { daily: 101, weekly: 102, monthly: 103 };
+  const klt = kltMap[period] || 101;
+
+  const url = "https://push2his.eastmoney.com/api/qt/stock/kline/get";
+  const start = logRequestStart("eastmoney:kline", { url, secid, klt, count });
+  try {
+    const resp = await axios.get<EastmoneyKlineResp>(url, {
+      params: {
+        secid,
+        klt,
+        fqt: 1,
+        // 仅传 lmt 有时会返回 data:null（rc=102），加 beg/end 更稳定
+        beg: 0,
+        end: 20500101,
+        lmt: Math.min(Math.max(50, count), 500),
+        fields1: "f1,f2,f3,f4,f5,f6",
+        fields2: "f51,f52,f53,f54,f55,f56,f57,f58",
+      },
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Referer: "https://quote.eastmoney.com/",
+      },
+      timeout: 20000,
+    });
+    logRequestOk("eastmoney:kline", start, { status: resp.status });
+
+    const klines = resp.data?.data?.klines || [];
+    return klines;
+  } catch (e) {
+    logRequestError("eastmoney:kline", start, e, { secid, klt, count });
+    throw e;
   }
 }
 
@@ -783,6 +834,46 @@ app.get("/api/search", async (req, res) => {
     const message = e instanceof Error ? e.message : String(e);
     logRequestError("tencent:search", start || Date.now(), e, { url, q });
     console.error("/api/search", message);
+    res.status(500).json({ error: message });
+  }
+});
+
+// K线（A股）：东方财富 push2his
+app.get("/api/kline", async (req, res) => {
+  const code = String(req.query.code || "").trim().toLowerCase();
+  const period = String(req.query.period || "daily").toLowerCase();
+  const count = Math.min(Number(req.query.count) || 200, 500);
+  if (!code) return res.status(400).json({ error: "missing code" });
+  if (!code.startsWith("sh") && !code.startsWith("sz") && !code.startsWith("bj")) {
+    return res.status(400).json({ error: "only A-share codes supported: sh/sz/bj" });
+  }
+
+  try {
+    const raw = await fetchEastmoneyKline({
+      code,
+      period: (period === "weekly" || period === "monthly") ? (period as any) : "daily",
+      count,
+    });
+
+    const bars = raw
+      .map((line) => String(line).split(","))
+      .filter((arr) => arr.length >= 6)
+      .map((arr) => {
+        const date = arr[0];
+        const open = Number(arr[1]);
+        const close = Number(arr[2]);
+        const high = Number(arr[3]);
+        const low = Number(arr[4]);
+        const volume = Number(arr[5]);
+        const amount = arr[6] != null ? Number(arr[6]) : undefined;
+        const ts = Date.parse(date + "T00:00:00+08:00");
+        return { ts, date, open, close, high, low, volume, amount };
+      })
+      .filter((b) => Number.isFinite(b.ts) && Number.isFinite(b.close));
+
+    res.json(bars);
+  } catch (e: any) {
+    const message = e instanceof Error ? e.message : String(e);
     res.status(500).json({ error: message });
   }
 });

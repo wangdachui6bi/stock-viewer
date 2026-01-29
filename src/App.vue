@@ -229,6 +229,10 @@
               </div>
             </div>
           </el-tab-pane>
+
+          <el-tab-pane label="量化" name="quant">
+            <QuantPanel :candidates="displayList" />
+          </el-tab-pane>
         </el-tabs>
         </div>
       </section>
@@ -989,6 +993,7 @@ import { ArrowDown } from "@element-plus/icons-vue";
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 import StockSearch from "./components/StockSearch.vue";
 import StockTable from "./components/StockTable.vue";
+import QuantPanel from "./components/QuantPanel.vue";
 import {
   fetchStockList,
   fetchNews,
@@ -1080,7 +1085,7 @@ const groupManageModal = ref(false);
 const newGroupName = ref("");
 const groupDrafts = ref<Record<string, string>>({});
 const hideMarketValue = ref(false);
-const toolsTab = ref<"overview" | "alerts" | "news">("overview");
+const toolsTab = ref<"overview" | "alerts" | "news" | "quant">("overview");
 const toolsCollapsed = ref(false);
 const holdingFilter = ref<"all" | "holding" | "not_holding">("all");
 const groupAssignModal = ref(false);
