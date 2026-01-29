@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 import express from "express";
 import axios from "axios";
 import iconv from "iconv-lite";
+import JSON5 from "json5";
 import { parseSinaStockResponse, parseTencentHKResponse } from "./parser.ts";
 
 const { decode } = iconv;
@@ -18,6 +19,54 @@ dotenv.config({ path: path.join(rootDir, ".env.local") });
 dotenv.config({ path: path.join(rootDir, ".env") });
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+
+type EastmoneyClistResp = {
+  data?: {
+    diff?: Array<Record<string, any>>;
+  };
+};
+
+function previewValue(value: unknown, limit = 400) {
+  if (value == null) return value;
+  let text = "";
+  try {
+    text = typeof value === "string" ? value : JSON.stringify(value);
+  } catch {
+    text = String(value);
+  }
+  if (text.length > limit) return `${text.slice(0, limit)}...`;
+  return text;
+}
+
+function logRequestStart(tag: string, info: Record<string, any>) {
+  const start = Date.now();
+  console.info(`[${tag}] request start`, info);
+  return start;
+}
+
+function logRequestOk(tag: string, start: number, info: Record<string, any>) {
+  console.info(`[${tag}] request ok`, { ...info, ms: Date.now() - start });
+}
+
+function logRequestError(
+  tag: string,
+  start: number,
+  err: any,
+  info: Record<string, any>,
+) {
+  const status = err?.response?.status;
+  const code = err?.code;
+  const message = err?.message || String(err);
+  const detail = previewValue(err?.response?.data);
+  console.error(`[${tag}] request error`, {
+    ...info,
+    ms: Date.now() - start,
+    status,
+    code,
+    message,
+    detail,
+  });
+}
 
 function extractJsonObject(text: string): string {
   const s = String(text || "").trim();
@@ -39,9 +88,167 @@ function safeJsonParse<T = any>(text: string): T {
   try {
     return JSON.parse(raw) as T;
   } catch (e: any) {
-    // 报错时把原始前缀带出来，方便定位模型输出
-    const preview = String(text || "").slice(0, 200);
-    throw new Error(`${e?.message || "Invalid JSON"} [0] preview=${JSON.stringify(preview)}`);
+    try {
+      return JSON5.parse(raw) as T;
+    } catch (e2: any) {
+      // 报错时把原始前缀带出来，方便定位模型输出
+      const preview = String(text || "").slice(0, 200);
+      const message = e2?.message || e?.message || "Invalid JSON";
+      throw new Error(`${message} [0] preview=${JSON.stringify(preview)}`);
+    }
+  }
+}
+
+async function fetchEastmoneyClist(params: Record<string, any>) {
+  // 东方财富 push2 列表接口（公开、无需 key；但可能有频率限制）
+  const url = "https://push2.eastmoney.com/api/qt/clist/get";
+  const start = logRequestStart("eastmoney:clist", {
+    url,
+    params,
+    timeout: 20000,
+  });
+  try {
+    const resp = await axios.get<EastmoneyClistResp>(url, {
+      params,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Referer: "https://quote.eastmoney.com/",
+      },
+      timeout: 20000,
+    });
+    logRequestOk("eastmoney:clist", start, { status: resp.status });
+    return resp.data?.data?.diff || [];
+  } catch (e) {
+    logRequestError("eastmoney:clist", start, e, {});
+    throw e;
+  }
+}
+
+function mapAshareMarketFs(): string {
+  // 沪深A：上证A(0/6,0/80) + 深证A(1/2,1/23)
+  return "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23";
+}
+
+async function fetchHotSectors(limit = 10) {
+  // 行业板块（t:2）+ 概念板块（t:3）
+  // 关键字段：f12=代码 f14=名称 f3=涨跌幅 f62=主力净流入（不一定有） f6=成交额
+  const fields =
+    "f12,f14,f2,f3,f4,f5,f6,f62,f184,f66,f69,f72,f75";
+
+  const [industry, concept] = await Promise.all([
+    fetchEastmoneyClist({
+      pn: 1,
+      pz: Math.min(limit, 30),
+      po: 1,
+      np: 1,
+      fltt: 2,
+      invt: 2,
+      fid: "f3",
+      fs: "m:90+t:2",
+      fields,
+    }),
+    fetchEastmoneyClist({
+      pn: 1,
+      pz: Math.min(limit, 30),
+      po: 1,
+      np: 1,
+      fltt: 2,
+      invt: 2,
+      fid: "f3",
+      fs: "m:90+t:3",
+      fields,
+    }),
+  ]);
+
+  const toSector = (x: any) => ({
+    code: String(x.f12 || ""),
+    name: String(x.f14 || ""),
+    price: x.f2,
+    percent: x.f3,
+    amount: x.f6,
+    mainNetIn: x.f62,
+  });
+
+  return {
+    industry: industry.map(toSector).filter((s: any) => s.code && s.name),
+    concept: concept.map(toSector).filter((s: any) => s.code && s.name),
+  };
+}
+
+async function fetchSectorConstituents(bkCode: string, limit = 30) {
+  const fields = "f12,f14,f2,f3,f4,f5,f6,f15,f16,f17";
+  const diff = await fetchEastmoneyClist({
+    pn: 1,
+    pz: Math.min(limit, 200),
+    po: 1,
+    np: 1,
+    fltt: 2,
+    invt: 2,
+    fid: "f3",
+    fs: `b:${bkCode}`,
+    fields,
+  });
+
+  return diff
+    .map((x: any) => ({
+      code: String(x.f12 || "").toLowerCase(),
+      name: String(x.f14 || ""),
+      price: x.f2,
+      percent: x.f3,
+      updown: x.f4,
+      volume: x.f5,
+      amount: x.f6,
+      high: x.f15,
+      low: x.f16,
+      open: x.f17,
+    }))
+    .filter((s: any) => s.code && s.name);
+}
+
+async function fetchAshareSnapshot(limit = 200) {
+  const fields = "f12,f14,f2,f3,f4,f5,f6,f15,f16,f17";
+  const diff = await fetchEastmoneyClist({
+    pn: 1,
+    pz: Math.min(limit, 500),
+    po: 1,
+    np: 1,
+    fltt: 2,
+    invt: 2,
+    fid: "f6", // 成交额
+    fs: mapAshareMarketFs(),
+    fields,
+  });
+  return diff
+    .map((x: any) => ({
+      code: String(x.f12 || "").toLowerCase(),
+      name: String(x.f14 || ""),
+      price: x.f2,
+      percent: x.f3,
+      updown: x.f4,
+      volume: x.f5,
+      amount: x.f6,
+      high: x.f15,
+      low: x.f16,
+      open: x.f17,
+    }))
+    .filter((s: any) => s.code && s.name);
+}
+
+async function fetchNewsHeadlines(limit = 10) {
+  // 这里用新浪财经 RSS（公开、无需 key）。如果不可用就返回空数组。
+  // 你也可以后续换成别的新闻源。
+  const url = "https://rss.sina.com.cn/roll/finance/hgjj.xml";
+  try {
+    const { data } = await axios.get(url, { timeout: 15000 });
+    const xml = String(data || "");
+    const titles = [...xml.matchAll(/<title><!\[CDATA\[(.*?)\]\]><\/title>/g)]
+      .map((m) => m[1])
+      .filter((t) => t && t !== "新浪财经" && t !== "滚动新闻")
+      .slice(0, limit);
+    return titles;
+  } catch {
+    return [];
   }
 }
 
@@ -90,6 +297,7 @@ async function callLLM(messages: ChatMessage[]) {
   let lastErr: unknown;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let start = 0;
     try {
       const url =
         provider === "volc"
@@ -98,8 +306,19 @@ async function callLLM(messages: ChatMessage[]) {
 
       const model = provider === "volc" ? volcModel : openaiModel;
       const apiKey = provider === "volc" ? volcApiKey! : openaiApiKey!;
+      const msgMeta = messages.map((m) => ({
+        role: m.role,
+        length: (m.content || "").length,
+      }));
+      start = logRequestStart(`llm:${provider}`, {
+        url,
+        model,
+        attempt,
+        timeout: 60000,
+        messages: msgMeta,
+      });
 
-      const { data } = await axios.post(
+      const resp = await axios.post(
         url,
         {
           model,
@@ -117,11 +336,16 @@ async function callLLM(messages: ChatMessage[]) {
         },
       );
 
+      logRequestOk(`llm:${provider}`, start, { status: resp.status });
+      const { data } = resp;
       const content = data?.choices?.[0]?.message?.content;
       if (!content) throw new Error("LLM API returned empty content");
       aiCache.set(key, { ts: Date.now(), content });
       return content as string;
     } catch (e: any) {
+      logRequestError(`llm:${provider}`, start || Date.now(), e, {
+        attempt,
+      });
       lastErr = e;
       const status = e?.response?.status;
       if (status === 429 && attempt < maxRetries) {
@@ -163,6 +387,245 @@ const randHeader = () => ({
   Referer: "http://finance.sina.com.cn/",
 });
 
+const AI_SECTOR_MOCK = {
+  bestSectors: [
+    {
+      kind: "industry",
+      code: "BK0732",
+      name: "贵金属",
+      rank: 1,
+      whyHot: [
+        "盘中领涨幅度超10%，板块强度高",
+        "主力资金持续净流入，市场关注度高",
+        "黄金作为传统避险资产，在市场波动预期下或受资金青睐",
+      ],
+      riskNotes: ["受国际金价波动影响大，短期波动风险较高", "板块涨幅已较大，追高需谨慎"],
+      keySignals: {
+        percent: 10.75,
+        amount: 45680837023,
+        mainNetIn: 446530048,
+      },
+    },
+    {
+      kind: "concept",
+      code: "BK0547",
+      name: "黄金概念",
+      rank: 2,
+      whyHot: [
+        "板块覆盖范围更广，涉及多只黄金相关龙头个股",
+        "成交额超1800亿，主力净流入超45亿，资金面支撑强",
+        "与贵金属板块联动性高，具备板块轮动延续性可能",
+      ],
+      riskNotes: ["部分个股存在炒作成分，估值波动风险大", "受国际金价短期走势影响明显"],
+      keySignals: {
+        percent: 7.51,
+        amount: 182527979903,
+        mainNetIn: 4521706496,
+      },
+    },
+    {
+      kind: "industry",
+      code: "BK1017",
+      name: "采掘行业",
+      rank: 3,
+      whyHot: ["涨幅超6%，板块内多只个股涨停，情绪面积极", "主力净流入超10亿，资金参与度较高", "周期类板块景气度或有回升预期"],
+      riskNotes: ["周期性强，受政策、供需关系影响大", "部分个股前期涨幅已累积，回调风险需警惕"],
+      keySignals: {
+        percent: 6.78,
+        amount: 16924114706,
+        mainNetIn: 1064808224,
+      },
+    },
+    {
+      kind: "industry",
+      code: "BK1027",
+      name: "小金属",
+      rank: 4,
+      whyHot: ["涨幅近5%，成交额超940亿，流动性充裕", "主力净流入超35亿，资金持续流入", "稀缺资源属性突出，或受益于产业政策支持"],
+      riskNotes: ["部分小金属价格波动剧烈，影响个股业绩", "板块内个股分化较大，选股难度较高"],
+      keySignals: {
+        percent: 4.85,
+        amount: 94346314229,
+        mainNetIn: 3509261824,
+      },
+    },
+  ],
+  focus: {
+    todayHotSectors: ["贵金属", "珠宝首饰", "黄金概念", "采掘行业"],
+    watchListSectors: ["小金属", "有色金属", "煤炭行业"],
+  },
+  openCandidates: [
+    {
+      code: "600547",
+      name: "山东黄金",
+      rank: 1,
+      reason: ["国内黄金龙头企业，与贵金属板块联动性强", "盘子适中，流动性良好，适合短线操作", "近期金价上涨，公司业绩或有支撑"],
+      plan: {
+        entry: "盘中回调至5日均线附近",
+        invalidation: "跌破10日均线",
+        takeProfit: "涨幅5-10%",
+      },
+    },
+    {
+      code: "601899",
+      name: "紫金矿业",
+      rank: 2,
+      reason: ["覆盖黄金、铜、锂等多种稀缺资源，受益于多板块上涨", "市值大，抗风险能力强，适合中线配置", "主力资金持续流入，资金面支撑强"],
+      plan: {
+        entry: "盘中回调至5日均线附近",
+        invalidation: "跌破10日均线",
+        takeProfit: "涨幅8-12%",
+      },
+    },
+    {
+      code: "601088",
+      name: "中国神华",
+      rank: 3,
+      reason: ["煤炭行业龙头，采掘板块核心标的", "业绩稳定，分红率高，风险相对较低", "主力资金净流入，情绪面积极"],
+      plan: {
+        entry: "盘中回调至5日均线附近",
+        invalidation: "跌破10日均线",
+        takeProfit: "涨幅5-8%",
+      },
+    },
+  ],
+  disclaimer: "不构成投资建议",
+  bestSectorStocks: [
+    {
+      code: "300139",
+      name: "晓程科技",
+      price: 70.6,
+      percent: 20.01,
+      updown: 11.77,
+      volume: 599686,
+      amount: 3989810779.47,
+      high: 70.6,
+      low: 58.84,
+      open: 59.03,
+    },
+    {
+      code: "002237",
+      name: "恒邦股份",
+      price: 21.42,
+      percent: 10.02,
+      updown: 1.95,
+      volume: 1531384,
+      amount: 3147556742.4,
+      high: 21.42,
+      low: 19.21,
+      open: 19.78,
+    },
+    {
+      code: "000506",
+      name: "招金黄金",
+      price: 25.93,
+      percent: 10.01,
+      updown: 2.36,
+      volume: 712577,
+      amount: 1821235793.46,
+      high: 25.93,
+      low: 24.9,
+      open: 25.1,
+    },
+    {
+      code: "600489",
+      name: "中金黄金",
+      price: 37.71,
+      percent: 10.01,
+      updown: 3.43,
+      volume: 1838971,
+      amount: 6715332968,
+      high: 37.71,
+      low: 34.39,
+      open: 35,
+    },
+    {
+      code: "001337",
+      name: "四川黄金",
+      price: 66.86,
+      percent: 10,
+      updown: 6.08,
+      volume: 258212,
+      amount: 1698566941.08,
+      high: 66.86,
+      low: 64,
+      open: 64,
+    },
+    {
+      code: "600988",
+      name: "赤峰黄金",
+      price: 46.86,
+      percent: 10,
+      updown: 4.26,
+      volume: 1396342,
+      amount: 6375989997,
+      high: 46.86,
+      low: 43.11,
+      open: 43.96,
+    },
+    {
+      code: "002155",
+      name: "湖南黄金",
+      price: 30.58,
+      percent: 10,
+      updown: 2.78,
+      volume: 35403,
+      amount: 108263780.68,
+      high: 30.58,
+      low: 30.58,
+      open: 30.58,
+    },
+    {
+      code: "601069",
+      name: "西部黄金",
+      price: 44.26,
+      percent: 9.99,
+      updown: 4.02,
+      volume: 389473,
+      amount: 1686196019,
+      high: 44.26,
+      low: 41.04,
+      open: 41.13,
+    },
+    {
+      code: "002716",
+      name: "湖南白银",
+      price: 19.4,
+      percent: 9.98,
+      updown: 1.76,
+      volume: 5039659,
+      amount: 9415586013.14,
+      high: 19.4,
+      low: 17.64,
+      open: 17.64,
+    },
+    {
+      code: "600547",
+      name: "山东黄金",
+      price: 59.66,
+      percent: 9.97,
+      updown: 5.41,
+      volume: 1294336,
+      amount: 7511574721,
+      high: 59.67,
+      low: 55.3,
+      open: 55.67,
+    },
+    {
+      code: "000975",
+      name: "山金国际",
+      price: 38.69,
+      percent: 8.28,
+      updown: 2.96,
+      volume: 852165,
+      amount: 3210723268.03,
+      high: 38.9,
+      low: 35.78,
+      open: 36.69,
+    },
+  ],
+};
+
 // 股票行情：新浪（A股、美股、期货）
 app.get("/api/stock", async (req, res) => {
   const codes = String(req.query.codes || "")
@@ -172,16 +635,20 @@ app.get("/api/stock", async (req, res) => {
   const url = `https://hq.sinajs.cn/list=${codes
     .map((c) => c.replace(".", "$"))
     .join(",")}`;
+  let start = 0;
   try {
+    start = logRequestStart("sina:stock", { url, codes });
     const resp = await axios.get(url, {
       responseType: "arraybuffer",
       headers: randHeader(),
     });
+    logRequestOk("sina:stock", start, { status: resp.status });
     const body = decode(Buffer.from(resp.data), "GB18030");
     const list = parseSinaStockResponse(body, codes);
     res.json(list);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    logRequestError("sina:stock", start || Date.now(), e, { url, codes });
     console.error("/api/stock", message);
     res.status(500).json({ error: message });
   }
@@ -195,17 +662,21 @@ app.get("/api/hk", async (req, res) => {
   if (!codes.length) return res.json([]);
   const q = codes.map((c) => `r_${c}`).join(",");
   const url = "https://qt.gtimg.cn/q=";
+  let start = 0;
   try {
+    start = logRequestStart("tencent:hk", { url, q });
     const resp = await axios.get(url, {
       params: { q, fmt: "json" },
       responseType: "arraybuffer",
     });
+    logRequestOk("tencent:hk", start, { status: resp.status });
     const body = decode(Buffer.from(resp.data), "GBK");
     const data = JSON.parse(body);
     const list = parseTencentHKResponse(data, codes);
     res.json(list);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    logRequestError("tencent:hk", start || Date.now(), e, { url, q });
     console.error("/api/hk", message);
     res.status(500).json({ error: message });
   }
@@ -217,8 +688,11 @@ app.get("/api/search", async (req, res) => {
   if (!q.trim()) return res.json([]);
   const url =
     "https://proxy.finance.qq.com/ifzqgtimg/appstock/smartbox/search/get";
+  let start = 0;
   try {
+    start = logRequestStart("tencent:search", { url, q });
     const resp = await axios.get(url, { params: { q } });
+    logRequestOk("tencent:search", start, { status: resp.status });
     const arr = resp.data?.data?.stock || [];
     const list = arr.map((item: string[]) => ({
       code: (item[1] || "").toLowerCase(),
@@ -232,6 +706,7 @@ app.get("/api/search", async (req, res) => {
     res.json(list);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    logRequestError("tencent:search", start || Date.now(), e, { url, q });
     console.error("/api/search", message);
     res.status(500).json({ error: message });
   }
@@ -291,6 +766,7 @@ app.post("/api/ai/analyze", async (req, res) => {
 
 // AI 选股：从候选列表中挑选更符合风格的标的
 app.post("/api/ai/pick", async (req, res) => {
+
   try {
     const { candidates, horizon, riskProfile, topN } = req.body || {};
     if (!Array.isArray(candidates) || candidates.length === 0) {
@@ -352,6 +828,256 @@ app.post("/api/ai/pick", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+// ===== A股板块 & 条件选股（AI + 开源行情接口） =====
+
+// 1) 推荐当下最强板块（可用于盘中/盘后）：结合板块涨跌 + 新闻标题，给出原因和建议个股
+app.post("/api/ai/a/sector", async (req, res) => {
+  try {
+    const mockFlag =
+      String(req.query.mock || "").toLowerCase() === "1" ||
+      String(req.query.mock || "").toLowerCase() === "true" ||
+      Boolean((req.body || {}).mock);
+      console.log(mockFlag,'mockFlag');
+    if (mockFlag) return res.json(AI_SECTOR_MOCK);
+    const { mode, topSectorN, topStockN, horizon, riskProfile } = req.body || {};
+    const sectors = await fetchHotSectors(Math.min(Number(topSectorN) || 10, 20));
+    const news = await fetchNewsHeadlines(12);
+
+    const sectorCandidates = [
+      ...sectors.industry.map((s) => ({ ...s, kind: "industry" })),
+      ...sectors.concept.map((s) => ({ ...s, kind: "concept" })),
+    ].slice(0, 40);
+
+    const system: ChatMessage = {
+      role: "system",
+      content:
+        "你是A股盘面研究与选股助手。你只能基于传入的板块涨跌幅/成交额/资金等字段，以及提供的新闻标题进行归因，不要编造不存在的消息细节。输出必须是严格 JSON（纯 JSON 字符串），不要输出 Markdown/```。必须包含风险提示：不构成投资建议。",
+    };
+
+    const user: ChatMessage = {
+      role: "user",
+      content: JSON.stringify(
+        {
+          task: "sector_recommend",
+          mode: mode || "intraday", // intraday | after_close
+          horizon: horizon || "swing_1_5_days",
+          riskProfile: riskProfile || "medium",
+          sectorCandidates,
+          newsHeadlines: news,
+          outputSchema: {
+            bestSectors: [
+              {
+                kind: "industry|concept",
+                code: "BKxxxx",
+                name: "",
+                rank: 1,
+                whyHot: ["原因1", "原因2"],
+                riskNotes: ["风险"],
+                keySignals: {
+                  percent: "number",
+                  amount: "number",
+                  mainNetIn: "number",
+                },
+              },
+            ],
+            focus: {
+              todayHotSectors: ["板块名..."],
+              watchListSectors: ["板块名..."],
+            },
+            openCandidates: [
+              {
+                code: "",
+                name: "",
+                rank: 1,
+                reason: ["理由"],
+                plan: {
+                  entry: "触发条件",
+                  invalidation: "止损/无效",
+                  takeProfit: "止盈",
+                },
+                riskNotes: ["风险"],
+              },
+            ],
+            disclaimer: "固定写：不构成投资建议",
+          },
+        },
+        null,
+        2,
+      ),
+    };
+
+    const content = await callLLM([system, user]);
+    const parsed = safeJsonParse<any>(content);
+
+    // 补充“最值得开仓板块”的成分股行情（取 bestSectors[0]）
+    const best = parsed?.bestSectors?.[0];
+    if (best?.code) {
+      parsed.bestSectorStocks = await fetchSectorConstituents(
+        String(best.code),
+        Math.min(Number(topStockN) || 20, 80),
+      );
+    }
+
+    res.json(parsed);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("/api/ai/a/sector", message);
+    res.status(500).json({ error: message });
+  }
+});
+
+// 2) 收盘后复盘：你可以传 mode=after_close（逻辑与上面一致，但 prompt 会看 mode 字段）
+app.post("/api/ai/a/afterclose", async (req, res) => {
+  try {
+    const { topSectorN, topStockN, horizon, riskProfile } = req.body || {};
+    const sectors = await fetchHotSectors(Math.min(Number(topSectorN) || 10, 20));
+    const news = await fetchNewsHeadlines(20);
+
+    const sectorCandidates = [
+      ...sectors.industry.map((s) => ({ ...s, kind: "industry" })),
+      ...sectors.concept.map((s) => ({ ...s, kind: "concept" })),
+    ].slice(0, 60);
+
+    const system: ChatMessage = {
+      role: "system",
+      content:
+        "你是A股收盘复盘助手。你只能基于传入的板块涨跌幅/成交额/资金等字段，以及提供的新闻标题进行归因与复盘，不要编造不存在的消息细节。输出必须是严格 JSON（纯 JSON 字符串），不要输出 Markdown/```。必须包含风险提示：不构成投资建议。",
+    };
+
+    const user: ChatMessage = {
+      role: "user",
+      content: JSON.stringify(
+        {
+          task: "after_close_review",
+          horizon: horizon || "swing_1_5_days",
+          riskProfile: riskProfile || "medium",
+          sectorCandidates,
+          newsHeadlines: news,
+          outputSchema: {
+            hotSectors: [
+              {
+                kind: "industry|concept",
+                code: "BKxxxx",
+                name: "",
+                rank: 1,
+                whyHot: ["原因1", "原因2"],
+                riskNotes: ["风险"],
+                keySignals: {
+                  percent: "number",
+                  amount: "number",
+                  mainNetIn: "number",
+                },
+              },
+            ],
+            worthWatching: [
+              {
+                name: "",
+                why: ["原因"],
+              },
+            ],
+            openCandidates: [
+              {
+                code: "",
+                name: "",
+                rank: 1,
+                reason: ["理由"],
+                plan: {
+                  entry: "触发条件",
+                  invalidation: "止损/无效",
+                  takeProfit: "止盈",
+                },
+                riskNotes: ["风险"],
+              },
+            ],
+            disclaimer: "固定写：不构成投资建议",
+          },
+        },
+        null,
+        2,
+      ),
+    };
+
+    const content = await callLLM([system, user]);
+    const parsed = safeJsonParse<any>(content);
+
+    const best = parsed?.hotSectors?.[0];
+    if (best?.code) {
+      parsed.bestSectorStocks = await fetchSectorConstituents(
+        String(best.code),
+        Math.min(Number(topStockN) || 20, 80),
+      );
+    }
+
+    res.json(parsed);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("/api/ai/a/afterclose", message);
+    res.status(500).json({ error: message });
+  }
+});
+
+// 3) 条件选股：输入自然语言条件，在A股快照里筛出满足的标的
+app.post("/api/ai/a/screen", async (req, res) => {
+  try {
+    const { query, limit, horizon, riskProfile } = req.body || {};
+    const q = String(query || "").trim();
+    if (!q) return res.status(400).json({ error: "missing query" });
+
+    const snapshot = await fetchAshareSnapshot(Math.min(Number(limit) || 200, 500));
+
+    const system: ChatMessage = {
+      role: "system",
+      content:
+        "你是A股条件选股助手。你只能基于传入的行情字段（价格、涨跌幅、开高低、成交量/成交额等）进行筛选和排序，不要编造基本面/新闻。输出必须是严格 JSON（纯 JSON 字符串），不要输出 Markdown/```。必须包含风险提示：不构成投资建议。",
+    };
+
+    const user: ChatMessage = {
+      role: "user",
+      content: JSON.stringify(
+        {
+          task: "screen",
+          horizon: horizon || "swing_1_5_days",
+          riskProfile: riskProfile || "medium",
+          query: q,
+          candidates: snapshot,
+          outputSchema: {
+            interpretation: {
+              must: ["硬条件"],
+              prefer: ["偏好条件"],
+              avoid: ["排除项"],
+            },
+            picks: [
+              {
+                code: "",
+                name: "",
+                rank: 1,
+                reason: ["理由"],
+                plan: {
+                  entry: "触发条件",
+                  invalidation: "止损/无效",
+                  takeProfit: "止盈",
+                },
+                riskNotes: ["风险"],
+              },
+            ],
+            excludedExamples: [{ code: "", name: "", why: "" }],
+            disclaimer: "固定写：不构成投资建议",
+          },
+        },
+        null,
+        2,
+      ),
+    };
+
+    const content = await callLLM([system, user]);
+    res.json(safeJsonParse(content));
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("/api/ai/a/screen", message);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Stock API proxy: http://localhost:${PORT}`);
 });

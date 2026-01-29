@@ -13,6 +13,7 @@
         class="stock-table"
         :header-cell-style="{ background: 'var(--bg-card)' }"
         highlight-current-row
+        :default-sort="{ prop: 'percent', order: 'descending' }"
       >
         <el-table-column
           prop="name"
@@ -38,6 +39,7 @@
           <template #default="{ row }">{{ row.price ?? "—" }}</template>
         </el-table-column>
         <el-table-column
+          prop="percent"
           label="涨跌幅"
           width="85"
           align="right"
@@ -45,9 +47,7 @@
           :sort-method="sortByPercent"
         >
           <template #default="{ row }">
-            <span :class="percentClass(row.percent)">{{
-              row.percent ?? "—"
-            }}</span>
+            <span :class="percentClassFrom(row)">{{ formatPercentText(row) }}</span>
           </template>
         </el-table-column>
         <el-table-column
@@ -58,9 +58,7 @@
           :sort-method="sortByUpdown"
         >
           <template #default="{ row }">
-            <span :class="percentClass(row.percent)">{{
-              row.updown ?? "—"
-            }}</span>
+            <span :class="percentClassFrom(row)">{{ row.updown ?? "—" }}</span>
           </template>
         </el-table-column>
         <el-table-column
@@ -222,9 +220,15 @@ function rowClassName({ row }: { row: StockItem }) {
   return row.isSellOut ? "is-sell-out" : "";
 }
 
-function percentClass(p: string) {
-  if (!p || p === "—") return "";
-  return p.startsWith("+") ? "down" : "up";
+function percentClassFrom(row: StockItem) {
+  const raw = String(row.percent ?? "").trim();
+  if (!raw || raw === "—") return "";
+  if (raw.startsWith("+")) return "down";
+  if (raw.startsWith("-")) return "up";
+  const updown = toSignedNumber(row.updown);
+  if (updown > 0) return "down";
+  if (updown < 0) return "up";
+  return "";
 }
 
 function earnClass(v: number | undefined) {
@@ -253,6 +257,38 @@ function toNumber(v: string | number | undefined): number {
   return Number.isNaN(n) ? 0 : n;
 }
 
+function toSignedNumber(v: string | number | undefined): number {
+  if (v == null || v === "—") return 0;
+  const s = String(v).replace("%", "").trim();
+  const n = Number.parseFloat(s);
+  return Number.isNaN(n) ? 0 : n;
+}
+
+function formatPercentText(row: StockItem): string {
+  const raw = String(row.percent ?? "").trim();
+  if (!raw || raw === "—") return "—";
+  if (raw.startsWith("+") || raw.startsWith("-")) return raw;
+  const value = toSignedNumber(raw);
+  if (!Number.isFinite(value)) return raw;
+  const suffix = raw.includes("%") ? "%" : "";
+  const abs = Math.abs(value).toFixed(2).replace(/\.00$/, "");
+  const updown = toSignedNumber(row.updown);
+  if (updown > 0) return `+${abs}${suffix}`;
+  if (updown < 0) return `-${abs}${suffix}`;
+  return value === 0 ? `0${suffix}` : raw;
+}
+
+function getSignedPercent(row: StockItem): number {
+  const raw = String(row.percent ?? "").trim();
+  if (!raw || raw === "—") return 0;
+  if (raw.startsWith("+") || raw.startsWith("-")) return toSignedNumber(raw);
+  const value = Math.abs(toSignedNumber(raw));
+  const updown = toSignedNumber(row.updown);
+  if (updown > 0) return value;
+  if (updown < 0) return -value;
+  return toSignedNumber(raw);
+}
+
 function toVolume(v: string | number | undefined): number {
   if (v == null || v === "—") return 0;
   const s = String(v).trim();
@@ -266,7 +302,7 @@ function toVolume(v: string | number | undefined): number {
 const sortByPrice = (a: StockItem, b: StockItem) =>
   toNumber(a.price) - toNumber(b.price);
 const sortByPercent = (a: StockItem, b: StockItem) =>
-  toNumber(a.percent) - toNumber(b.percent);
+  getSignedPercent(a) - getSignedPercent(b);
 const sortByUpdown = (a: StockItem, b: StockItem) =>
   toNumber(a.updown) - toNumber(b.updown);
 const sortByOpen = (a: StockItem, b: StockItem) =>

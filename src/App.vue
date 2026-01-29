@@ -38,19 +38,33 @@
             <el-button size="small" @click="requestNotificationPermission">
               通知权限
             </el-button>
+            <div class="realtime-wrap">
+              <span class="realtime-label">隐藏市值</span>
+              <el-switch
+                v-model="hideMarketValue"
+                size="default"
+                inline-prompt
+                active-text="开"
+                inactive-text="关"
+              />
+            </div>
           </div>
         </div>
         <div class="summary-grid">
           <div class="summary-card">
             <div class="summary-label">持仓市值</div>
-            <div class="summary-value">
-              {{ formatMoney(portfolioSummary.currentValue) }}
+            <div class="summary-value" :class="{ masked: hideMarketValue }">
+              {{
+                hideMarketValue
+                  ? "****"
+                  : formatMoney(portfolioSummary.currentValue)
+              }}
             </div>
           </div>
           <div class="summary-card">
             <div class="summary-label">持仓成本</div>
-            <div class="summary-value">
-              {{ formatMoney(portfolioSummary.totalCost) }}
+            <div class="summary-value" :class="{ masked: hideMarketValue }">
+              {{ hideMarketValue ? "****" : formatMoney(portfolioSummary.totalCost) }}
             </div>
           </div>
           <div class="summary-card">
@@ -230,6 +244,15 @@
             >
               {{ SORT_LABELS[sortType] }}
             </el-button>
+            <el-select
+              v-model="holdingFilter"
+              size="small"
+              class="group-select"
+            >
+              <el-option value="all" label="全部标的" />
+              <el-option value="holding" label="仅持仓" />
+              <el-option value="not_holding" label="未持仓" />
+            </el-select>
             <el-button :loading="loading" @click="refreshList">
               {{ loading ? "刷新中…" : "刷新" }}
             </el-button>
@@ -400,6 +423,43 @@
           </div>
           <div class="ai-disclaimer">{{ aiAnalyzeResult.disclaimer }}</div>
         </div>
+        <el-divider />
+        <div class="ai-history">
+          <div class="ai-history-head">
+            <div class="ai-history-title">历史记录</div>
+            <el-button
+              link
+              type="danger"
+              size="small"
+              :disabled="!aiAnalyzeHistory.length"
+              @click="clearAiAnalyzeHistory"
+            >
+              清空
+            </el-button>
+          </div>
+          <el-empty v-if="!aiAnalyzeHistory.length" description="暂无历史" />
+          <div v-else class="ai-history-list">
+            <div
+              v-for="item in aiAnalyzeHistory"
+              :key="item.id"
+              class="ai-history-item"
+            >
+              <div class="ai-history-main">
+                <div class="ai-history-title-row">
+                  <b>{{ item.params.stock.name }} ({{ item.params.stock.code }})</b>
+                  <span class="muted">{{ formatDateTime(item.ts) }}</span>
+                </div>
+                <div class="muted">
+                  周期 {{ formatHorizon(item.params.horizon) }} · 风险
+                  {{ formatRisk(item.params.riskProfile) }}
+                </div>
+              </div>
+              <el-button size="small" @click="applyAiAnalyzeHistory(item)">
+                查看
+              </el-button>
+            </div>
+          </div>
+        </div>
       </template>
     </el-dialog>
 
@@ -508,6 +568,45 @@
           <div class="ai-disclaimer">{{ aiSectorResult.disclaimer }}</div>
         </div>
       </template>
+      <el-divider />
+      <div class="ai-history">
+        <div class="ai-history-head">
+          <div class="ai-history-title">历史记录</div>
+          <el-button
+            link
+            type="danger"
+            size="small"
+            :disabled="!aiSectorHistory.length"
+            @click="clearAiSectorHistory"
+          >
+            清空
+          </el-button>
+        </div>
+        <el-empty v-if="!aiSectorHistory.length" description="暂无历史" />
+        <div v-else class="ai-history-list">
+          <div
+            v-for="item in aiSectorHistory"
+            :key="item.id"
+            class="ai-history-item"
+          >
+            <div class="ai-history-main">
+              <div class="ai-history-title-row">
+                <b>板块最强</b>
+                <span class="muted">{{ formatDateTime(item.ts) }}</span>
+              </div>
+              <div class="muted">
+                Top板块 {{ item.params.topSectorN }} · Top个股
+                {{ item.params.topStockN }} · 周期
+                {{ formatHorizon(item.params.horizon) }} · 风险
+                {{ formatRisk(item.params.riskProfile) }}
+              </div>
+            </div>
+            <el-button size="small" @click="applyAiSectorHistory(item)">
+              查看
+            </el-button>
+          </div>
+        </div>
+      </div>
       <template #footer>
         <el-button @click="aiSectorModal=false">关闭</el-button>
         <el-button type="primary" :loading="aiSectorLoading" @click="openAiSectorNow">刷新</el-button>
@@ -557,6 +656,45 @@
           <div class="ai-disclaimer">{{ aiAfterCloseResult.disclaimer }}</div>
         </div>
       </template>
+      <el-divider />
+      <div class="ai-history">
+        <div class="ai-history-head">
+          <div class="ai-history-title">历史记录</div>
+          <el-button
+            link
+            type="danger"
+            size="small"
+            :disabled="!aiAfterCloseHistory.length"
+            @click="clearAiAfterCloseHistory"
+          >
+            清空
+          </el-button>
+        </div>
+        <el-empty v-if="!aiAfterCloseHistory.length" description="暂无历史" />
+        <div v-else class="ai-history-list">
+          <div
+            v-for="item in aiAfterCloseHistory"
+            :key="item.id"
+            class="ai-history-item"
+          >
+            <div class="ai-history-main">
+              <div class="ai-history-title-row">
+                <b>收盘复盘</b>
+                <span class="muted">{{ formatDateTime(item.ts) }}</span>
+              </div>
+              <div class="muted">
+                Top板块 {{ item.params.topSectorN }} · Top个股
+                {{ item.params.topStockN }} · 周期
+                {{ formatHorizon(item.params.horizon) }} · 风险
+                {{ formatRisk(item.params.riskProfile) }}
+              </div>
+            </div>
+            <el-button size="small" @click="applyAiAfterCloseHistory(item)">
+              查看
+            </el-button>
+          </div>
+        </div>
+      </div>
       <template #footer>
         <el-button @click="aiAfterCloseModal=false">关闭</el-button>
         <el-button type="primary" :loading="aiAfterCloseLoading" @click="openAiAfterClose">刷新</el-button>
@@ -623,6 +761,41 @@
           <div class="ai-disclaimer">{{ aiScreenResult.disclaimer }}</div>
         </div>
       </template>
+      <el-divider />
+      <div class="ai-history">
+        <div class="ai-history-head">
+          <div class="ai-history-title">历史记录</div>
+          <el-button
+            link
+            type="danger"
+            size="small"
+            :disabled="!aiScreenHistory.length"
+            @click="clearAiScreenHistory"
+          >
+            清空
+          </el-button>
+        </div>
+        <el-empty v-if="!aiScreenHistory.length" description="暂无历史" />
+        <div v-else class="ai-history-list">
+          <div
+            v-for="item in aiScreenHistory"
+            :key="item.id"
+            class="ai-history-item"
+          >
+            <div class="ai-history-main">
+              <div class="ai-history-title-row">
+                <b>条件选股</b>
+                <span class="muted">{{ formatDateTime(item.ts) }}</span>
+              </div>
+              <div class="muted">候选范围 {{ item.params.limit }}</div>
+              <div class="ai-history-query">{{ item.params.query }}</div>
+            </div>
+            <el-button size="small" @click="applyAiScreenHistory(item)">
+              查看
+            </el-button>
+          </div>
+        </div>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -673,12 +846,26 @@ type AlertRule = {
   lastTriggered?: number;
 };
 
+type AiHistoryItem<T, P = Record<string, any>> = {
+  id: string;
+  ts: number;
+  params: P;
+  result: T;
+};
+
 const STORAGE_KEY = "vue-stock-viewer-codes";
 const STORAGE_GROUP_KEY = "vue-stock-viewer-groups";
 const STORAGE_PRICE_KEY = "vue-stock-viewer-stockPrice";
 const STORAGE_ALERT_KEY = "vue-stock-viewer-alerts";
+const STORAGE_HIDE_VALUE_KEY = "vue-stock-viewer-hideMarketValue";
+const STORAGE_HOLDING_FILTER_KEY = "vue-stock-viewer-holdingFilter";
+const STORAGE_AI_ANALYZE_HISTORY_KEY = "vue-stock-viewer-aiAnalyzeHistory";
+const STORAGE_AI_SECTOR_HISTORY_KEY = "vue-stock-viewer-aiSectorHistory";
+const STORAGE_AI_AFTER_CLOSE_HISTORY_KEY = "vue-stock-viewer-aiAfterCloseHistory";
+const STORAGE_AI_SCREEN_HISTORY_KEY = "vue-stock-viewer-aiScreenHistory";
 const ALL_GROUP_ID = "__all__";
 const ALERT_COOLDOWN = 3 * 60 * 1000;
+const AI_HISTORY_LIMIT = 20;
 
 const searchKeyword = ref("");
 const searchLoading = ref(false);
@@ -699,6 +886,8 @@ const alertForm = ref({
 const groupManageModal = ref(false);
 const newGroupName = ref("");
 const groupDrafts = ref<Record<string, string>>({});
+const hideMarketValue = ref(false);
+const holdingFilter = ref<"all" | "holding" | "not_holding">("all");
 const groupAssignModal = ref(false);
 const groupAssignStock = ref<StockItem | null>(null);
 const groupAssignId = ref<string>("");
@@ -720,6 +909,12 @@ const aiAnalyzeModal = ref(false);
 const aiAnalyzeLoading = ref(false);
 const aiAnalyzeTarget = ref<StockItem | null>(null);
 const aiAnalyzeResult = ref<AiAnalyzeResult | null>(null);
+const aiAnalyzeHistory = ref<
+  AiHistoryItem<
+    AiAnalyzeResult,
+    { stock: StockItem; horizon: string; riskProfile: string }
+  >[]
+>([]);
 
 const aiPickModal = ref(false);
 const aiPickLoading = ref(false);
@@ -732,19 +927,41 @@ const aiPickRisk = ref("medium");
 const aiSectorModal = ref(false);
 const aiSectorLoading = ref(false);
 const aiSectorResult = ref<AiSectorNowResult | null>(null);
+const aiSectorHistory = ref<
+  AiHistoryItem<
+    AiSectorNowResult,
+    { topSectorN: number; topStockN: number; horizon: string; riskProfile: string }
+  >[]
+>([]);
 
 const aiAfterCloseModal = ref(false);
 const aiAfterCloseLoading = ref(false);
 const aiAfterCloseResult = ref<AiAfterCloseResult | null>(null);
+const aiAfterCloseHistory = ref<
+  AiHistoryItem<
+    AiAfterCloseResult,
+    { topSectorN: number; topStockN: number; horizon: string; riskProfile: string }
+  >[]
+>([]);
 
 const aiScreenModal = ref(false);
 const aiScreenLoading = ref(false);
 const aiScreenQuery = ref("");
 const aiScreenResult = ref<AiScreenResult | null>(null);
 const aiScreenLimit = ref(200);
+const aiScreenHistory = ref<
+  AiHistoryItem<
+    AiScreenResult,
+    { query: string; limit: number; horizon: string; riskProfile: string }
+  >[]
+>([]);
 
 function createGroupId() {
   return `g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function createHistoryId() {
+  return `h_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
 function ensureDefaultGroup() {
@@ -804,6 +1021,68 @@ function loadAlerts() {
   } catch {
     alerts.value = [];
   }
+}
+
+function loadViewSettings() {
+  try {
+    const raw = localStorage.getItem(STORAGE_HIDE_VALUE_KEY);
+    hideMarketValue.value = raw ? JSON.parse(raw) : false;
+  } catch {
+    hideMarketValue.value = false;
+  }
+  try {
+    const raw = localStorage.getItem(STORAGE_HOLDING_FILTER_KEY);
+    holdingFilter.value = raw ? JSON.parse(raw) : "all";
+  } catch {
+    holdingFilter.value = "all";
+  }
+}
+
+function saveViewSettings() {
+  localStorage.setItem(
+    STORAGE_HIDE_VALUE_KEY,
+    JSON.stringify(!!hideMarketValue.value),
+  );
+  localStorage.setItem(
+    STORAGE_HOLDING_FILTER_KEY,
+    JSON.stringify(holdingFilter.value),
+  );
+}
+
+function readHistory<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAiHistory() {
+  localStorage.setItem(
+    STORAGE_AI_ANALYZE_HISTORY_KEY,
+    JSON.stringify(aiAnalyzeHistory.value),
+  );
+  localStorage.setItem(
+    STORAGE_AI_SECTOR_HISTORY_KEY,
+    JSON.stringify(aiSectorHistory.value),
+  );
+  localStorage.setItem(
+    STORAGE_AI_AFTER_CLOSE_HISTORY_KEY,
+    JSON.stringify(aiAfterCloseHistory.value),
+  );
+  localStorage.setItem(
+    STORAGE_AI_SCREEN_HISTORY_KEY,
+    JSON.stringify(aiScreenHistory.value),
+  );
+}
+
+function loadAiHistory() {
+  aiAnalyzeHistory.value = readHistory(STORAGE_AI_ANALYZE_HISTORY_KEY);
+  aiSectorHistory.value = readHistory(STORAGE_AI_SECTOR_HISTORY_KEY);
+  aiAfterCloseHistory.value = readHistory(STORAGE_AI_AFTER_CLOSE_HISTORY_KEY);
+  aiScreenHistory.value = readHistory(STORAGE_AI_SCREEN_HISTORY_KEY);
 }
 
 function saveGroups() {
@@ -884,9 +1163,18 @@ const currentGroupCodes = computed(() => {
 
 const displayList = computed(() => {
   const merged = mergeHeldAndEarnings(stockList.value);
-  if (currentGroupId.value === ALL_GROUP_ID) return sortList(merged);
   const codeSet = new Set(currentGroupCodes.value.map((c) => c.toLowerCase()));
-  return sortList(merged.filter((row) => codeSet.has(row.code.toLowerCase())));
+  const inGroup =
+    currentGroupId.value === ALL_GROUP_ID
+      ? merged
+      : merged.filter((row) => codeSet.has(row.code.toLowerCase()));
+  const filtered = inGroup.filter((row) => {
+    const hasHolding = !!row.heldAmount && row.heldAmount > 0 && !row.isSellOut;
+    if (holdingFilter.value === "holding") return hasHolding;
+    if (holdingFilter.value === "not_holding") return !hasHolding;
+    return true;
+  });
+  return sortList(filtered);
 });
 
 const alertStockOptions = computed(() =>
@@ -949,6 +1237,27 @@ function formatSigned(v: number, suffix = "") {
 function formatTime(ts: number) {
   const d = new Date(ts);
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}:${d.getSeconds().toString().padStart(2, "0")}`;
+}
+
+function formatDateTime(ts: number) {
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = (d.getMonth() + 1).toString().padStart(2, "0");
+  const day = d.getDate().toString().padStart(2, "0");
+  return `${y}-${m}-${day} ${formatTime(ts)}`;
+}
+
+function formatHorizon(value: string) {
+  if (value === "swing_1_5_days") return "短线 1-5 天";
+  if (value === "swing_1_4_weeks") return "波段 1-4 周";
+  return value || "—";
+}
+
+function formatRisk(value: string) {
+  if (value === "low") return "低";
+  if (value === "medium") return "中";
+  if (value === "high") return "高";
+  return value || "—";
 }
 
 function formatAlertCondition(alert: AlertRule) {
@@ -1171,11 +1480,16 @@ async function openAiAnalyze(row: StockItem) {
   aiAnalyzeModal.value = true;
   aiAnalyzeLoading.value = true;
   try {
-    aiAnalyzeResult.value = await aiAnalyzeStockApi({
+    const result = await aiAnalyzeStockApi({
       stock: row,
       horizon: aiPickHorizon.value,
       riskProfile: aiPickRisk.value,
     });
+    aiAnalyzeResult.value = result;
+    addAiAnalyzeHistory(
+      { stock: row, horizon: aiPickHorizon.value, riskProfile: aiPickRisk.value },
+      result,
+    );
   } catch (e) {
     console.error(e);
     ElMessage.error("AI 分析失败：请检查 VOLCENGINE_API_KEY/模型ID 或服务是否可用");
@@ -1214,12 +1528,16 @@ async function openAiSectorNow() {
   aiSectorLoading.value = true;
   aiSectorResult.value = null;
   try {
-    aiSectorResult.value = await aiSectorNow({
+    const params = {
       topSectorN: 10,
       topStockN: 40,
       horizon: aiPickHorizon.value,
       riskProfile: aiPickRisk.value,
-    });
+      mock:true
+    };
+    const result = await aiSectorNow(params);
+    aiSectorResult.value = result;
+    addAiSectorHistory(params, result);
   } catch (e) {
     console.error(e);
     ElMessage.error("板块分析失败：请检查后端服务/开源接口是否可用");
@@ -1233,12 +1551,15 @@ async function openAiAfterClose() {
   aiAfterCloseLoading.value = true;
   aiAfterCloseResult.value = null;
   try {
-    aiAfterCloseResult.value = await aiAfterClose({
+    const params = {
       topSectorN: 15,
       topStockN: 40,
       horizon: aiPickHorizon.value,
       riskProfile: aiPickRisk.value,
-    });
+    };
+    const result = await aiAfterClose(params);
+    aiAfterCloseResult.value = result;
+    addAiAfterCloseHistory(params, result);
   } catch (e) {
     console.error(e);
     ElMessage.error("收盘复盘失败：请检查后端服务/开源接口是否可用");
@@ -1261,18 +1582,172 @@ async function runAiScreen() {
   aiScreenLoading.value = true;
   aiScreenResult.value = null;
   try {
-    aiScreenResult.value = await aiScreenStocks({
+    const params = {
       query: q,
       limit: aiScreenLimit.value,
       horizon: aiPickHorizon.value,
       riskProfile: aiPickRisk.value,
-    });
+    };
+    const result = await aiScreenStocks(params);
+    aiScreenResult.value = result;
+    addAiScreenHistory(params, result);
   } catch (e) {
     console.error(e);
     ElMessage.error("条件选股失败：请检查后端服务/开源接口是否可用");
   } finally {
     aiScreenLoading.value = false;
   }
+}
+
+function addAiAnalyzeHistory(
+  params: { stock: StockItem; horizon: string; riskProfile: string },
+  result: AiAnalyzeResult,
+) {
+  const item: AiHistoryItem<
+    AiAnalyzeResult,
+    { stock: StockItem; horizon: string; riskProfile: string }
+  > = {
+    id: createHistoryId(),
+    ts: Date.now(),
+    params,
+    result,
+  };
+  aiAnalyzeHistory.value = [item, ...aiAnalyzeHistory.value].slice(
+    0,
+    AI_HISTORY_LIMIT,
+  );
+  saveAiHistory();
+}
+
+function addAiSectorHistory(
+  params: { topSectorN: number; topStockN: number; horizon: string; riskProfile: string },
+  result: AiSectorNowResult,
+) {
+  const item: AiHistoryItem<
+    AiSectorNowResult,
+    { topSectorN: number; topStockN: number; horizon: string; riskProfile: string }
+  > = {
+    id: createHistoryId(),
+    ts: Date.now(),
+    params,
+    result,
+  };
+  aiSectorHistory.value = [item, ...aiSectorHistory.value].slice(
+    0,
+    AI_HISTORY_LIMIT,
+  );
+  saveAiHistory();
+}
+
+function addAiAfterCloseHistory(
+  params: { topSectorN: number; topStockN: number; horizon: string; riskProfile: string },
+  result: AiAfterCloseResult,
+) {
+  const item: AiHistoryItem<
+    AiAfterCloseResult,
+    { topSectorN: number; topStockN: number; horizon: string; riskProfile: string }
+  > = {
+    id: createHistoryId(),
+    ts: Date.now(),
+    params,
+    result,
+  };
+  aiAfterCloseHistory.value = [item, ...aiAfterCloseHistory.value].slice(
+    0,
+    AI_HISTORY_LIMIT,
+  );
+  saveAiHistory();
+}
+
+function addAiScreenHistory(
+  params: { query: string; limit: number; horizon: string; riskProfile: string },
+  result: AiScreenResult,
+) {
+  const item: AiHistoryItem<
+    AiScreenResult,
+    { query: string; limit: number; horizon: string; riskProfile: string }
+  > = {
+    id: createHistoryId(),
+    ts: Date.now(),
+    params,
+    result,
+  };
+  aiScreenHistory.value = [item, ...aiScreenHistory.value].slice(
+    0,
+    AI_HISTORY_LIMIT,
+  );
+  saveAiHistory();
+}
+
+function applyAiAnalyzeHistory(
+  item: AiHistoryItem<
+    AiAnalyzeResult,
+    { stock: StockItem; horizon: string; riskProfile: string }
+  >,
+) {
+  aiAnalyzeTarget.value = item.params.stock;
+  aiAnalyzeResult.value = item.result;
+  aiPickHorizon.value = item.params.horizon;
+  aiPickRisk.value = item.params.riskProfile;
+  aiAnalyzeModal.value = true;
+}
+
+function applyAiSectorHistory(
+  item: AiHistoryItem<
+    AiSectorNowResult,
+    { topSectorN: number; topStockN: number; horizon: string; riskProfile: string }
+  >,
+) {
+  aiSectorResult.value = item.result;
+  aiPickHorizon.value = item.params.horizon;
+  aiPickRisk.value = item.params.riskProfile;
+  aiSectorModal.value = true;
+}
+
+function applyAiAfterCloseHistory(
+  item: AiHistoryItem<
+    AiAfterCloseResult,
+    { topSectorN: number; topStockN: number; horizon: string; riskProfile: string }
+  >,
+) {
+  aiAfterCloseResult.value = item.result;
+  aiPickHorizon.value = item.params.horizon;
+  aiPickRisk.value = item.params.riskProfile;
+  aiAfterCloseModal.value = true;
+}
+
+function applyAiScreenHistory(
+  item: AiHistoryItem<
+    AiScreenResult,
+    { query: string; limit: number; horizon: string; riskProfile: string }
+  >,
+) {
+  aiScreenQuery.value = item.params.query;
+  aiScreenLimit.value = item.params.limit;
+  aiPickHorizon.value = item.params.horizon;
+  aiPickRisk.value = item.params.riskProfile;
+  aiScreenResult.value = item.result;
+  aiScreenModal.value = true;
+}
+
+function clearAiAnalyzeHistory() {
+  aiAnalyzeHistory.value = [];
+  saveAiHistory();
+}
+
+function clearAiSectorHistory() {
+  aiSectorHistory.value = [];
+  saveAiHistory();
+}
+
+function clearAiAfterCloseHistory() {
+  aiAfterCloseHistory.value = [];
+  saveAiHistory();
+}
+
+function clearAiScreenHistory() {
+  aiScreenHistory.value = [];
+  saveAiHistory();
 }
 
 function removeCode(code: string) {
@@ -1369,6 +1844,9 @@ watch(allCodes, () => loadStockList(), { immediate: false });
 watch(groupManageModal, (open) => {
   if (open) updateGroupDrafts();
 });
+watch([hideMarketValue, holdingFilter], () => {
+  saveViewSettings();
+});
 watch(searchKeyword, (q) => {
   if (searchTimer) clearTimeout(searchTimer);
   if (!q.trim()) {
@@ -1381,6 +1859,8 @@ onMounted(() => {
   loadGroups();
   loadStockPrice();
   loadAlerts();
+  loadViewSettings();
+  loadAiHistory();
   updateGroupDrafts();
   loadStockList();
 });
@@ -1512,6 +1992,9 @@ onUnmounted(() => {
   font-size: 1.05rem;
   font-weight: 600;
 }
+.summary-value.masked {
+  letter-spacing: 0.12em;
+}
 .summary-sub {
   font-size: 0.8rem;
   color: var(--text-muted);
@@ -1586,6 +2069,48 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+.ai-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.ai-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ai-history-title {
+  font-weight: 600;
+}
+.ai-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.ai-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+.ai-history-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.ai-history-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.ai-history-query {
+  font-size: 0.85rem;
+  color: var(--text);
 }
 .ai-row {
   display: grid;
