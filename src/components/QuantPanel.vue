@@ -526,6 +526,17 @@ async function runScan() {
 }
 
 async function copyPlan(row: Row) {
+  // 如果当前有入/止损，就顺便按“仓位/风控”参数算一份建议股数
+  const sizing = row.entry && row.stop
+    ? positionSizing({
+        equity: Number(riskForm.value.equity) || 0,
+        riskPct: Number(riskForm.value.riskPct) || 0,
+        entry: row.entry,
+        stop: row.stop,
+        lotSize: Number(riskForm.value.lotSize) || 100,
+      })
+    : null
+
   const text = [
     `【量化计划】${row.name} (${row.code})`,
     `策略：${STRATEGY_LABEL[strategy.value]}`,
@@ -533,6 +544,10 @@ async function copyPlan(row: Row) {
     row.entry ? `入场参考：${fmt(row.entry)}` : '',
     row.stop ? `止损参考：${fmt(row.stop)}` : '',
     row.take ? `止盈参考：${fmt(row.take)}` : '',
+    sizing
+      ? `建议买入：${sizing.shares} 股（约 ${sizing.lots} 手）｜单笔最大亏损≈${sizing.riskAmount.toFixed(0)}｜占用资金≈${sizing.estCost.toFixed(0)}`
+      : '',
+    sizing ? `（按你的风控设置：资金=${riskForm.value.equity}，单笔风险=${riskForm.value.riskPct}%）` : '',
     `理由：${row.reason.join('；')}`,
     '提示：不构成投资建议',
   ]
