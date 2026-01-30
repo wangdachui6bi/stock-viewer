@@ -1,5 +1,5 @@
-import { readBody, sendJson, setCors } from '../_lib/http'
-import { callLLM, safeJsonParse, type ChatMessage } from '../_lib/ai'
+import { readBody, sendJson, setCors } from '../_lib/http.js'
+import { callLLM, safeJsonParse, type ChatMessage } from '../_lib/ai.js'
 
 export default async function handler(req: any, res: any) {
   setCors(res)
