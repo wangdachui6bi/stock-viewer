@@ -13,7 +13,7 @@
     "test": "vitest",
     "lint:fix": "eslint . --fix",
     "lint:lint-staged": "lint-staged",
-    "type-check": "vue-tsc -b --noEmit",
+    "type-check": "vue-tsc -b",
     "format": "prettier --write '**/*.{ts,vue}'",
     "prepare": "husky .husky"
   },
