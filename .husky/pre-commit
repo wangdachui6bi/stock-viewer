@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+# 任何命令失败立即退出，阻止 commit
+set -e
+
+# 先跑 TypeScript 类型检查，有错误直接拦截
+echo "🔎 Running TypeScript type check..."
+npm run type-check
+
+# 再跑 lint-staged（代码格式化和 ESLint）
+echo "📝 Running lint-staged (formatting & linting)..."
+npm run lint:lint-staged
+
+echo "✅ All checks passed!"

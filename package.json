@@ -14,7 +14,8 @@
     "lint:fix": "eslint . --fix",
     "lint:lint-staged": "lint-staged",
     "type-check": "vue-tsc -b --noEmit",
-    "format": "prettier --write '**/*.{ts,vue}'"
+    "format": "prettier --write '**/*.{ts,vue}'",
+    "prepare": "husky .husky"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
