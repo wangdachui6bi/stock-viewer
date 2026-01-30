@@ -1,7 +1,7 @@
 import axios from 'axios'
 import * as iconv from 'iconv-lite'
-import { parseQuery, readBody, sendJson, setCors } from './_lib/http'
-import { parseSinaStockResponse } from './_lib/parser'
+import { parseQuery, readBody, sendJson, setCors } from './_lib/http.js'
+import { parseSinaStockResponse } from './_lib/parser.js'
 
 const { decode } = iconv
 

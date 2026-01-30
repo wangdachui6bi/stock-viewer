@@ -1,7 +1,7 @@
 import axios from 'axios'
 import * as iconv from 'iconv-lite'
-import { parseQuery, sendJson, setCors } from './_lib/http'
-import { parseTencentHKResponse } from './_lib/parser'
+import { parseQuery, sendJson, setCors } from './_lib/http.js'
+import { parseTencentHKResponse } from './_lib/parser.js'
 
 const { decode } = iconv
 

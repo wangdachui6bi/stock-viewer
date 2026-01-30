@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { parseQuery, sendJson, setCors } from './_lib/http'
+import { parseQuery, sendJson, setCors } from './_lib/http.js'
 
 export default async function handler(req: any, res: any) {
   setCors(res)

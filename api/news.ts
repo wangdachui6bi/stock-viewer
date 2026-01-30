@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { parseQuery, sendJson, setCors } from './_lib/http'
+import { parseQuery, sendJson, setCors } from './_lib/http.js'
 
 async function fetchNewsItems(limit = 20) {
   const url = 'https://rss.sina.com.cn/roll/finance/hgjj.xml'

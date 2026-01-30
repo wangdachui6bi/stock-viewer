@@ -1,1 +1,1 @@
-export { parseSinaStockResponse, parseTencentHKResponse } from '../../server/parser'
+export { parseSinaStockResponse, parseTencentHKResponse } from '../../server/parser.js'
