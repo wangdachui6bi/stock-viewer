@@ -16,7 +16,12 @@
           <el-icon class="search-prefix-icon"><Search /></el-icon>
         </template>
       </el-input>
-      <el-button type="primary" size="large" :loading="loading" @click="emit('search')">
+      <el-button
+        type="primary"
+        size="large"
+        :loading="loading"
+        @click="emit('search')"
+      >
         搜索
       </el-button>
     </div>
@@ -119,7 +124,9 @@ function onBlur() {
 }
 .search-box :deep(.el-input__wrapper) {
   border-radius: var(--radius);
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  transition:
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
 }
 .search-box :deep(.el-input__wrapper:hover),
 .search-box :deep(.el-input__wrapper.is-focus) {
@@ -170,5 +177,15 @@ function onBlur() {
 .dropdown-enter-from,
 .dropdown-leave-to {
   opacity: 0;
+}
+
+@media (max-width: 768px) {
+  .search-box {
+    flex-wrap: wrap;
+  }
+  .search-input {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
 }
 </style>

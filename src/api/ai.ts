@@ -1,7 +1,7 @@
 import axios from "axios";
 import type { StockItem } from "@/types/stock";
 
-const api = axios.create({ baseURL: "/api", timeout: 60000 });
+const api = axios.create({ baseURL: "/api", timeout: 120000 });
 
 export type AiAnalyzeResult = {
   summary: string;
@@ -128,7 +128,10 @@ export async function aiSectorNow(params?: {
   riskProfile?: string;
   mock?: boolean;
 }): Promise<AiSectorNowResult> {
-  const { data } = await api.post<AiSectorNowResult>("/ai/a/sector", params || {});
+  const { data } = await api.post<AiSectorNowResult>(
+    "/ai/a/sector",
+    params || {},
+  );
   return data;
 }
 
@@ -138,7 +141,10 @@ export async function aiAfterClose(params?: {
   horizon?: string;
   riskProfile?: string;
 }): Promise<AiAfterCloseResult> {
-  const { data } = await api.post<AiAfterCloseResult>("/ai/a/afterclose", params || {});
+  const { data } = await api.post<AiAfterCloseResult>(
+    "/ai/a/afterclose",
+    params || {},
+  );
   return data;
 }
 

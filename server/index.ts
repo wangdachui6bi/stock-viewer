@@ -117,7 +117,7 @@ function extractJsonObject(text: string): string {
         escape = true;
         continue;
       }
-      if (ch === "\"") {
+      if (ch === '"') {
         inString = !inString;
         continue;
       }
@@ -192,8 +192,7 @@ function mapAshareMarketFs(): string {
 async function fetchHotSectors(limit = 10) {
   // 行业板块（t:2）+ 概念板块（t:3）
   // 关键字段：f12=代码 f14=名称 f3=涨跌幅 f62=主力净流入（不一定有） f6=成交额
-  const fields =
-    "f12,f14,f2,f3,f4,f5,f6,f62,f184,f66,f69,f72,f75";
+  const fields = "f12,f14,f2,f3,f4,f5,f6,f62,f184,f66,f69,f72,f75";
 
   const [industry, concept] = await Promise.all([
     fetchEastmoneyClist({
@@ -321,7 +320,11 @@ async function fetchEastmoneyKline(params: {
   const digits = pure.replace(/^(sh|sz|bj)/, "");
   const market = pure.startsWith("sh") ? 1 : 0;
   const secid = `${market}.${digits}`;
-  const kltMap: Record<string, number> = { daily: 101, weekly: 102, monthly: 103 };
+  const kltMap: Record<string, number> = {
+    daily: 101,
+    weekly: 102,
+    monthly: 103,
+  };
   const klt = kltMap[period] || 101;
 
   const url = "https://push2his.eastmoney.com/api/qt/stock/kline/get";
@@ -396,12 +399,16 @@ async function callLLM(messages: ChatMessage[]) {
    */
   const volcApiKey = process.env.VOLCENGINE_API_KEY;
   const volcBaseUrl =
-    process.env.VOLCENGINE_BASE_URL || "https://ark.cn-beijing.volces.com/api/v3";
+    process.env.VOLCENGINE_BASE_URL ||
+    "https://ark.cn-beijing.volces.com/api/v3";
   const volcModel = process.env.VOLCENGINE_MODEL || "deepseek-v3.2";
 
-  const openaiApiKey = process.env.OPENAI_API_KEY || process.env.CHATGPT_API_KEY;
+  const openaiApiKey =
+    process.env.OPENAI_API_KEY || process.env.CHATGPT_API_KEY;
   const openaiBaseUrl =
-    process.env.OPENAI_BASE_URL || process.env.CHATGPT_BASE_URL || "https://api.openai.com";
+    process.env.OPENAI_BASE_URL ||
+    process.env.CHATGPT_BASE_URL ||
+    "https://api.openai.com";
   const openaiModel =
     process.env.OPENAI_MODEL || process.env.CHATGPT_MODEL || "gpt-4o-mini";
 
@@ -440,7 +447,7 @@ async function callLLM(messages: ChatMessage[]) {
         url,
         model,
         attempt,
-        timeout: 60000,
+        timeout: 120000,
         messages: msgMeta,
       });
 
@@ -458,7 +465,7 @@ async function callLLM(messages: ChatMessage[]) {
             Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
           },
-          timeout: 60000,
+          timeout: 120000,
         },
       );
 
@@ -488,8 +495,12 @@ async function callLLM(messages: ChatMessage[]) {
 
   const e: any = lastErr;
   const status = e?.response?.status;
-  const detail = e?.response?.data ? JSON.stringify(e.response.data) : e?.message;
-  throw new Error(`LLM API error${status ? ` (${status})` : ""} [${provider}]: ${detail}`);
+  const detail = e?.response?.data
+    ? JSON.stringify(e.response.data)
+    : e?.message;
+  throw new Error(
+    `LLM API error${status ? ` (${status})` : ""} [${provider}]: ${detail}`,
+  );
 }
 
 const app = express();
@@ -525,7 +536,10 @@ const AI_SECTOR_MOCK = {
         "主力资金持续净流入，市场关注度高",
         "黄金作为传统避险资产，在市场波动预期下或受资金青睐",
       ],
-      riskNotes: ["受国际金价波动影响大，短期波动风险较高", "板块涨幅已较大，追高需谨慎"],
+      riskNotes: [
+        "受国际金价波动影响大，短期波动风险较高",
+        "板块涨幅已较大，追高需谨慎",
+      ],
       keySignals: {
         percent: 10.75,
         amount: 45680837023,
@@ -542,7 +556,10 @@ const AI_SECTOR_MOCK = {
         "成交额超1800亿，主力净流入超45亿，资金面支撑强",
         "与贵金属板块联动性高，具备板块轮动延续性可能",
       ],
-      riskNotes: ["部分个股存在炒作成分，估值波动风险大", "受国际金价短期走势影响明显"],
+      riskNotes: [
+        "部分个股存在炒作成分，估值波动风险大",
+        "受国际金价短期走势影响明显",
+      ],
       keySignals: {
         percent: 7.51,
         amount: 182527979903,
@@ -554,8 +571,15 @@ const AI_SECTOR_MOCK = {
       code: "BK1017",
       name: "采掘行业",
       rank: 3,
-      whyHot: ["涨幅超6%，板块内多只个股涨停，情绪面积极", "主力净流入超10亿，资金参与度较高", "周期类板块景气度或有回升预期"],
-      riskNotes: ["周期性强，受政策、供需关系影响大", "部分个股前期涨幅已累积，回调风险需警惕"],
+      whyHot: [
+        "涨幅超6%，板块内多只个股涨停，情绪面积极",
+        "主力净流入超10亿，资金参与度较高",
+        "周期类板块景气度或有回升预期",
+      ],
+      riskNotes: [
+        "周期性强，受政策、供需关系影响大",
+        "部分个股前期涨幅已累积，回调风险需警惕",
+      ],
       keySignals: {
         percent: 6.78,
         amount: 16924114706,
@@ -567,8 +591,15 @@ const AI_SECTOR_MOCK = {
       code: "BK1027",
       name: "小金属",
       rank: 4,
-      whyHot: ["涨幅近5%，成交额超940亿，流动性充裕", "主力净流入超35亿，资金持续流入", "稀缺资源属性突出，或受益于产业政策支持"],
-      riskNotes: ["部分小金属价格波动剧烈，影响个股业绩", "板块内个股分化较大，选股难度较高"],
+      whyHot: [
+        "涨幅近5%，成交额超940亿，流动性充裕",
+        "主力净流入超35亿，资金持续流入",
+        "稀缺资源属性突出，或受益于产业政策支持",
+      ],
+      riskNotes: [
+        "部分小金属价格波动剧烈，影响个股业绩",
+        "板块内个股分化较大，选股难度较高",
+      ],
       keySignals: {
         percent: 4.85,
         amount: 94346314229,
@@ -585,7 +616,11 @@ const AI_SECTOR_MOCK = {
       code: "600547",
       name: "山东黄金",
       rank: 1,
-      reason: ["国内黄金龙头企业，与贵金属板块联动性强", "盘子适中，流动性良好，适合短线操作", "近期金价上涨，公司业绩或有支撑"],
+      reason: [
+        "国内黄金龙头企业，与贵金属板块联动性强",
+        "盘子适中，流动性良好，适合短线操作",
+        "近期金价上涨，公司业绩或有支撑",
+      ],
       plan: {
         entry: "盘中回调至5日均线附近",
         invalidation: "跌破10日均线",
@@ -596,7 +631,11 @@ const AI_SECTOR_MOCK = {
       code: "601899",
       name: "紫金矿业",
       rank: 2,
-      reason: ["覆盖黄金、铜、锂等多种稀缺资源，受益于多板块上涨", "市值大，抗风险能力强，适合中线配置", "主力资金持续流入，资金面支撑强"],
+      reason: [
+        "覆盖黄金、铜、锂等多种稀缺资源，受益于多板块上涨",
+        "市值大，抗风险能力强，适合中线配置",
+        "主力资金持续流入，资金面支撑强",
+      ],
       plan: {
         entry: "盘中回调至5日均线附近",
         invalidation: "跌破10日均线",
@@ -607,7 +646,11 @@ const AI_SECTOR_MOCK = {
       code: "601088",
       name: "中国神华",
       rank: 3,
-      reason: ["煤炭行业龙头，采掘板块核心标的", "业绩稳定，分红率高，风险相对较低", "主力资金净流入，情绪面积极"],
+      reason: [
+        "煤炭行业龙头，采掘板块核心标的",
+        "业绩稳定，分红率高，风险相对较低",
+        "主力资金净流入，情绪面积极",
+      ],
       plan: {
         entry: "盘中回调至5日均线附近",
         invalidation: "跌破10日均线",
@@ -825,7 +868,7 @@ app.get("/api/search", async (req, res) => {
       name: item[2] || "",
       market: item[0] || "",
       abbreviation: item[3] || "",
-      label: `${(item[0] || "")}${(item[1] || "").toLowerCase()} | ${
+      label: `${item[0] || ""}${(item[1] || "").toLowerCase()} | ${
         item[2] || ""
       }`,
     }));
@@ -840,18 +883,27 @@ app.get("/api/search", async (req, res) => {
 
 // K线（A股）：东方财富 push2his
 app.get("/api/kline", async (req, res) => {
-  const code = String(req.query.code || "").trim().toLowerCase();
+  const code = String(req.query.code || "")
+    .trim()
+    .toLowerCase();
   const period = String(req.query.period || "daily").toLowerCase();
   const count = Math.min(Number(req.query.count) || 200, 500);
   if (!code) return res.status(400).json({ error: "missing code" });
-  if (!code.startsWith("sh") && !code.startsWith("sz") && !code.startsWith("bj")) {
-    return res.status(400).json({ error: "only A-share codes supported: sh/sz/bj" });
+  if (
+    !code.startsWith("sh") &&
+    !code.startsWith("sz") &&
+    !code.startsWith("bj")
+  ) {
+    return res
+      .status(400)
+      .json({ error: "only A-share codes supported: sh/sz/bj" });
   }
 
   try {
     const raw = await fetchEastmoneyKline({
       code,
-      period: (period === "weekly" || period === "monthly") ? (period as any) : "daily",
+      period:
+        period === "weekly" || period === "monthly" ? (period as any) : "daily",
       count,
     });
 
@@ -949,7 +1001,6 @@ app.post("/api/ai/analyze", async (req, res) => {
 
 // AI 选股：从候选列表中挑选更符合风格的标的
 app.post("/api/ai/pick", async (req, res) => {
-
   try {
     const { candidates, horizon, riskProfile, topN } = req.body || {};
     if (!Array.isArray(candidates) || candidates.length === 0) {
@@ -1020,10 +1071,13 @@ app.post("/api/ai/a/sector", async (req, res) => {
       String(req.query.mock || "").toLowerCase() === "1" ||
       String(req.query.mock || "").toLowerCase() === "true" ||
       Boolean((req.body || {}).mock);
-      console.log(mockFlag,'mockFlag');
+    console.log(mockFlag, "mockFlag");
     if (mockFlag) return res.json(AI_SECTOR_MOCK);
-    const { mode, topSectorN, topStockN, horizon, riskProfile } = req.body || {};
-    const sectors = await fetchHotSectors(Math.min(Number(topSectorN) || 10, 20));
+    const { mode, topSectorN, topStockN, horizon, riskProfile } =
+      req.body || {};
+    const sectors = await fetchHotSectors(
+      Math.min(Number(topSectorN) || 10, 20),
+    );
     const news = await fetchNewsHeadlines(12);
 
     const sectorCandidates = [
@@ -1113,7 +1167,9 @@ app.post("/api/ai/a/sector", async (req, res) => {
 app.post("/api/ai/a/afterclose", async (req, res) => {
   try {
     const { topSectorN, topStockN, horizon, riskProfile } = req.body || {};
-    const sectors = await fetchHotSectors(Math.min(Number(topSectorN) || 10, 20));
+    const sectors = await fetchHotSectors(
+      Math.min(Number(topSectorN) || 10, 20),
+    );
     const news = await fetchNewsHeadlines(20);
 
     const sectorCandidates = [
@@ -1206,7 +1262,9 @@ app.post("/api/ai/a/screen", async (req, res) => {
     const q = String(query || "").trim();
     if (!q) return res.status(400).json({ error: "missing query" });
 
-    const snapshot = await fetchAshareSnapshot(Math.min(Number(limit) || 200, 500));
+    const snapshot = await fetchAshareSnapshot(
+      Math.min(Number(limit) || 200, 500),
+    );
 
     const system: ChatMessage = {
       role: "system",

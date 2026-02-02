@@ -1,9 +1,9 @@
 <template>
-  <div class="app">
+  <div class="app" :class="{ h5: isH5 }">
     <header class="header">
       <div class="header-inner">
         <h1 class="title">股票行情</h1>
-        <p class="subtitle">PC 端交易助手</p>
+        <p class="subtitle">{{ isH5 ? "H5 行情" : "PC 端交易助手" }}</p>
         <div class="quick-links">
           <a
             href="https://data.eastmoney.com/hsgt/index.html"
@@ -28,11 +28,16 @@
         @search="onSearch"
         @select="onSelectSearchItem"
       />
-      <section class="tools-section" :class="{ 'tools-section--collapsed': toolsCollapsed }">
+      <section
+        class="tools-section"
+        :class="{ 'tools-section--collapsed': toolsCollapsed }"
+      >
         <div class="section-head tools-section-head">
           <div class="section-title-row">
             <h2>交易工具</h2>
-            <span class="last-update">持仓 {{ portfolioSummary.holdingCount }} 只</span>
+            <span class="last-update"
+              >持仓 {{ portfolioSummary.holdingCount }} 只</span
+            >
           </div>
           <div class="actions">
             <el-button
@@ -44,7 +49,11 @@
               {{ toolsCollapsed ? "展开" : "收起" }}
             </el-button>
             <template v-if="!toolsCollapsed">
-              <el-button size="small" @click="requestNotificationPermission">
+              <el-button
+                v-if="!isH5"
+                size="small"
+                @click="requestNotificationPermission"
+              >
                 通知权限
               </el-button>
               <div class="realtime-wrap">
@@ -61,179 +70,201 @@
           </div>
         </div>
         <div v-show="!toolsCollapsed" class="tools-section-body">
-        <el-tabs v-model="toolsTab" class="tools-tabs">
-          <el-tab-pane label="概览" name="overview">
-            <div class="summary-grid">
-              <div class="summary-card">
-                <div class="summary-label">持仓市值</div>
-                <div class="summary-value" :class="{ masked: hideMarketValue }">
-                  {{
-                    hideMarketValue
-                      ? "****"
-                      : formatMoney(portfolioSummary.currentValue)
-                  }}
+          <el-tabs v-model="toolsTab" class="tools-tabs">
+            <el-tab-pane label="概览" name="overview">
+              <div class="summary-grid">
+                <div class="summary-card">
+                  <div class="summary-label">持仓市值</div>
+                  <div
+                    class="summary-value"
+                    :class="{ masked: hideMarketValue }"
+                  >
+                    {{
+                      hideMarketValue
+                        ? "****"
+                        : formatMoney(portfolioSummary.currentValue)
+                    }}
+                  </div>
+                </div>
+                <div class="summary-card">
+                  <div class="summary-label">持仓成本</div>
+                  <div
+                    class="summary-value"
+                    :class="{ masked: hideMarketValue }"
+                  >
+                    {{
+                      hideMarketValue
+                        ? "****"
+                        : formatMoney(portfolioSummary.totalCost)
+                    }}
+                  </div>
+                </div>
+                <div class="summary-card">
+                  <div class="summary-label">总盈亏</div>
+                  <div
+                    class="summary-value"
+                    :class="
+                      portfolioSummary.totalEarnings > 0
+                        ? 'down'
+                        : portfolioSummary.totalEarnings < 0
+                          ? 'up'
+                          : ''
+                    "
+                  >
+                    {{
+                      hideMarketValue
+                        ? "****"
+                        : formatSigned(portfolioSummary.totalEarnings)
+                    }}
+                  </div>
+                  <div class="summary-sub">
+                    {{
+                      hideMarketValue
+                        ? "****"
+                        : formatSigned(portfolioSummary.totalPct, "%")
+                    }}
+                  </div>
+                </div>
+                <div class="summary-card">
+                  <div class="summary-label">今日盈亏</div>
+                  <div
+                    class="summary-value"
+                    :class="
+                      portfolioSummary.todayEarnings > 0
+                        ? 'down'
+                        : portfolioSummary.todayEarnings < 0
+                          ? 'up'
+                          : ''
+                    "
+                  >
+                    {{ formatSigned(portfolioSummary.todayEarnings) }}
+                  </div>
                 </div>
               </div>
-              <div class="summary-card">
-                <div class="summary-label">持仓成本</div>
-                <div class="summary-value" :class="{ masked: hideMarketValue }">
-                  {{ hideMarketValue ? "****" : formatMoney(portfolioSummary.totalCost) }}
-                </div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">总盈亏</div>
-                <div
-                  class="summary-value"
-                  :class="
-                    portfolioSummary.totalEarnings > 0
-                      ? 'down'
-                      : portfolioSummary.totalEarnings < 0
-                        ? 'up'
-                        : ''
-                  "
-                >
-                  {{
-                    hideMarketValue
-                      ? "****"
-                      : formatSigned(portfolioSummary.totalEarnings)
-                  }}
-                </div>
-                <div class="summary-sub">
-                  {{ hideMarketValue ? "****" : formatSigned(portfolioSummary.totalPct, '%') }}
-                </div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">今日盈亏</div>
-                <div
-                  class="summary-value"
-                  :class="
-                    portfolioSummary.todayEarnings > 0
-                      ? 'down'
-                      : portfolioSummary.todayEarnings < 0
-                        ? 'up'
-                        : ''
-                  "
-                >
-                  {{ formatSigned(portfolioSummary.todayEarnings) }}
-                </div>
-              </div>
-            </div>
-          </el-tab-pane>
-          <el-tab-pane label="提醒" name="alerts">
-            <div class="alerts-panel">
-              <div class="alerts-form">
-                <el-select
-                  v-model="alertForm.code"
-                  filterable
-                  allow-create
-                  default-first-option
-                  placeholder="选择股票 / 输入代码"
-                  class="alert-select"
-                >
-                  <el-option
-                    v-for="item in alertStockOptions"
-                    :key="item.code"
-                    :label="`${item.name} (${item.code})`"
-                    :value="item.code"
+            </el-tab-pane>
+            <el-tab-pane v-if="!isH5" label="提醒" name="alerts">
+              <div class="alerts-panel">
+                <div class="alerts-form">
+                  <el-select
+                    v-model="alertForm.code"
+                    filterable
+                    allow-create
+                    default-first-option
+                    placeholder="选择股票 / 输入代码"
+                    class="alert-select"
+                  >
+                    <el-option
+                      v-for="item in alertStockOptions"
+                      :key="item.code"
+                      :label="`${item.name} (${item.code})`"
+                      :value="item.code"
+                    />
+                  </el-select>
+                  <el-select v-model="alertForm.type" class="alert-type">
+                    <el-option label="价格" value="price" />
+                    <el-option label="涨跌幅" value="percent" />
+                  </el-select>
+                  <el-select v-model="alertForm.operator" class="alert-op">
+                    <el-option label="≥" value=">=" />
+                    <el-option label="≤" value="<=" />
+                  </el-select>
+                  <el-input-number
+                    v-model="alertForm.value"
+                    :step="0.01"
+                    :precision="2"
+                    class="alert-value"
                   />
-                </el-select>
-                <el-select v-model="alertForm.type" class="alert-type">
-                  <el-option label="价格" value="price" />
-                  <el-option label="涨跌幅" value="percent" />
-                </el-select>
-                <el-select v-model="alertForm.operator" class="alert-op">
-                  <el-option label="≥" value=">=" />
-                  <el-option label="≤" value="<=" />
-                </el-select>
-                <el-input-number
-                  v-model="alertForm.value"
-                  :step="0.01"
-                  :precision="2"
-                  class="alert-value"
-                />
-                <el-button type="primary" @click="addAlert">添加提醒</el-button>
-              </div>
-              <div class="alerts-list">
-                <el-empty
-                  v-if="!alerts.length"
-                  description="暂无提醒，添加后价格触达会通知"
-                />
-                <el-table v-else :data="alerts" size="small" stripe>
-                  <el-table-column label="股票" min-width="140">
-                    <template #default="{ row }">
-                      <div class="alert-name">
-                        <span>{{ row.name || row.code }}</span>
-                        <span class="muted">({{ row.code }})</span>
-                      </div>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="条件" min-width="150">
-                    <template #default="{ row }">
-                      {{ formatAlertCondition(row) }}
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="上次触发" width="110">
-                    <template #default="{ row }">
-                      {{ formatAlertLastTime(row.lastTriggered) }}
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="状态" width="90">
-                    <template #default="{ row }">
-                      <el-switch
-                        v-model="row.enabled"
-                        @change="toggleAlert(row, $event)"
-                      />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="操作" width="80">
-                    <template #default="{ row }">
-                      <el-button
-                        link
-                        type="danger"
-                        size="small"
-                        @click="removeAlert(row.id)"
-                      >
-                        删除
-                      </el-button>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-            </div>
-          </el-tab-pane>
-          <el-tab-pane label="资讯" name="news">
-            <div class="news-panel-inner">
-              <div class="section-head">
-                <div class="section-title-row">
-                  <span class="last-update" v-if="newsLastUpdate">
-                    更新于 {{ formatTime(newsLastUpdate) }}
-                  </span>
+                  <el-button type="primary" @click="addAlert"
+                    >添加提醒</el-button
+                  >
                 </div>
-                <el-button size="small" :loading="newsLoading" @click="loadNews">
-                  刷新
-                </el-button>
+                <div class="alerts-list">
+                  <el-empty
+                    v-if="!alerts.length"
+                    description="暂无提醒，添加后价格触达会通知"
+                  />
+                  <el-table v-else :data="alerts" size="small" stripe>
+                    <el-table-column label="股票" min-width="140">
+                      <template #default="{ row }">
+                        <div class="alert-name">
+                          <span>{{ row.name || row.code }}</span>
+                          <span class="muted">({{ row.code }})</span>
+                        </div>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="条件" min-width="150">
+                      <template #default="{ row }">
+                        {{ formatAlertCondition(row) }}
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="上次触发" width="110">
+                      <template #default="{ row }">
+                        {{ formatAlertLastTime(row.lastTriggered) }}
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="状态" width="90">
+                      <template #default="{ row }">
+                        <el-switch
+                          v-model="row.enabled"
+                          @change="toggleAlert(row, $event)"
+                        />
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="80">
+                      <template #default="{ row }">
+                        <el-button
+                          link
+                          type="danger"
+                          size="small"
+                          @click="removeAlert(row.id)"
+                        >
+                          删除
+                        </el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
               </div>
-              <div class="news-list">
-                <el-empty
-                  v-if="!newsLoading && !newsList.length"
-                  description="暂无资讯"
-                />
-                <ul v-else class="news-items">
-                  <li v-for="item in newsList" :key="item.link || item.title">
-                    <a :href="item.link" target="_blank" rel="noopener">
-                      {{ item.title }}
-                    </a>
-                    <span class="muted">{{ formatNewsTime(item.pubDate) }}</span>
-                  </li>
-                </ul>
+            </el-tab-pane>
+            <el-tab-pane label="资讯" name="news">
+              <div class="news-panel-inner">
+                <div class="section-head">
+                  <div class="section-title-row">
+                    <span class="last-update" v-if="newsLastUpdate">
+                      更新于 {{ formatTime(newsLastUpdate) }}
+                    </span>
+                  </div>
+                  <el-button
+                    size="small"
+                    :loading="newsLoading"
+                    @click="loadNews"
+                  >
+                    刷新
+                  </el-button>
+                </div>
+                <div class="news-list">
+                  <el-empty
+                    v-if="!newsLoading && !newsList.length"
+                    description="暂无资讯"
+                  />
+                  <ul v-else class="news-items">
+                    <li v-for="item in newsList" :key="item.link || item.title">
+                      <a :href="item.link" target="_blank" rel="noopener">
+                        {{ item.title }}
+                      </a>
+                      <span class="muted">{{
+                        formatNewsTime(item.pubDate)
+                      }}</span>
+                    </li>
+                  </ul>
+                </div>
               </div>
-            </div>
-          </el-tab-pane>
+            </el-tab-pane>
 
-          <el-tab-pane label="量化" name="quant">
-            <QuantPanel :candidates="displayList" />
-          </el-tab-pane>
-        </el-tabs>
+            <el-tab-pane label="量化" name="quant">
+              <QuantPanel :candidates="displayList" />
+            </el-tab-pane>
+          </el-tabs>
         </div>
       </section>
       <section class="watchlist-section">
@@ -257,7 +288,9 @@
                 <el-dropdown-menu>
                   <el-dropdown-item command="pick">AI 选股</el-dropdown-item>
                   <el-dropdown-item command="sector">板块最强</el-dropdown-item>
-                  <el-dropdown-item command="afterClose">收盘复盘</el-dropdown-item>
+                  <el-dropdown-item command="afterClose"
+                    >收盘复盘</el-dropdown-item
+                  >
                   <el-dropdown-item command="screen">条件选股</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -371,11 +404,7 @@
         <el-button type="primary" @click="saveHolding">保存</el-button>
       </template>
     </el-dialog>
-    <el-dialog
-      v-model="groupManageModal"
-      title="分组管理"
-      width="420px"
-    >
+    <el-dialog v-model="groupManageModal" title="分组管理" width="420px">
       <div class="group-manage">
         <div class="group-create">
           <el-input v-model="newGroupName" placeholder="输入分组名称" />
@@ -458,15 +487,21 @@
           <div class="ai-row">
             <div class="ai-label">关键位</div>
             <div class="ai-value">
-              <div><b>支撑：</b>{{ aiAnalyzeResult.levels.support.join('，') }}</div>
-              <div><b>压力：</b>{{ aiAnalyzeResult.levels.resistance.join('，') }}</div>
+              <div>
+                <b>支撑：</b>{{ aiAnalyzeResult.levels.support.join("，") }}
+              </div>
+              <div>
+                <b>压力：</b>{{ aiAnalyzeResult.levels.resistance.join("，") }}
+              </div>
             </div>
           </div>
           <div class="ai-row">
             <div class="ai-label">计划</div>
             <div class="ai-value">
               <div><b>入场：</b>{{ aiAnalyzeResult.plan.entry }}</div>
-              <div><b>止损/无效：</b>{{ aiAnalyzeResult.plan.invalidation }}</div>
+              <div>
+                <b>止损/无效：</b>{{ aiAnalyzeResult.plan.invalidation }}
+              </div>
               <div><b>止盈：</b>{{ aiAnalyzeResult.plan.takeProfit }}</div>
               <div><b>仓位：</b>{{ aiAnalyzeResult.plan.positionSizing }}</div>
             </div>
@@ -475,7 +510,9 @@
             <div class="ai-label">风险</div>
             <div class="ai-value">
               <ul>
-                <li v-for="(x, i) in aiAnalyzeResult.risks" :key="i">{{ x }}</li>
+                <li v-for="(x, i) in aiAnalyzeResult.risks" :key="i">
+                  {{ x }}
+                </li>
               </ul>
             </div>
           </div>
@@ -507,7 +544,11 @@
             >
               <div class="ai-history-main">
                 <div class="ai-history-title-row">
-                  <b>{{ item.params.stock.name }} ({{ item.params.stock.code }})</b>
+                  <b
+                    >{{ item.params.stock.name }} ({{
+                      item.params.stock.code
+                    }})</b
+                  >
                   <span class="muted">{{ formatDateTime(item.ts) }}</span>
                 </div>
                 <div class="muted">
@@ -552,7 +593,12 @@
         <el-button size="small" @click="refreshKline">刷新</el-button>
       </div>
       <div class="kline-wrap">
-        <el-image v-if="klineUrl" :src="klineUrl" fit="contain" class="kline-image">
+        <el-image
+          v-if="klineUrl"
+          :src="klineUrl"
+          fit="contain"
+          class="kline-image"
+        >
           <template #error>
             <div class="muted">K线加载失败</div>
           </template>
@@ -562,10 +608,7 @@
       <div class="trade-tools">
         <div class="trade-block">
           <div class="trade-title">交易提示</div>
-          <el-empty
-            v-if="!klineSignals.length"
-            description="暂无明显信号"
-          />
+          <el-empty v-if="!klineSignals.length" description="暂无明显信号" />
           <ul v-else>
             <li v-for="(s, i) in klineSignals" :key="i">{{ s }}</li>
           </ul>
@@ -575,11 +618,21 @@
           <div class="trade-controls">
             <div class="trade-control">
               <span class="muted">止损%</span>
-              <el-input-number v-model="tradeRiskPct" :min="0" :max="20" :step="0.5" />
+              <el-input-number
+                v-model="tradeRiskPct"
+                :min="0"
+                :max="20"
+                :step="0.5"
+              />
             </div>
             <div class="trade-control">
               <span class="muted">止盈%</span>
-              <el-input-number v-model="tradeTakePct" :min="0" :max="50" :step="1" />
+              <el-input-number
+                v-model="tradeTakePct"
+                :min="0"
+                :max="50"
+                :step="1"
+              />
             </div>
           </div>
           <div class="trade-rows" v-if="tradePlan">
@@ -587,10 +640,14 @@
             <div><b>止损价：</b>{{ formatMoney(tradePlan.stopPrice) }}</div>
             <div><b>止盈价：</b>{{ formatMoney(tradePlan.takePrice) }}</div>
             <div class="muted">
-              预估盈亏（每股）：{{ tradePlan.perShareLoss }}/{{ tradePlan.perShareGain }}
+              预估盈亏（每股）：{{ tradePlan.perShareLoss }}/{{
+                tradePlan.perShareGain
+              }}
             </div>
             <div v-if="tradePlan.totalLoss != null" class="muted">
-              预估盈亏（持仓）：{{ tradePlan.totalLoss }}/{{ tradePlan.totalGain }}
+              预估盈亏（持仓）：{{ tradePlan.totalLoss }}/{{
+                tradePlan.totalGain
+              }}
             </div>
           </div>
           <el-empty v-else description="暂无基准价" />
@@ -625,7 +682,11 @@
             </el-select>
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" :loading="aiPickLoading" @click="runAiPick">
+            <el-button
+              type="primary"
+              :loading="aiPickLoading"
+              @click="runAiPick"
+            >
               开始计算
             </el-button>
           </el-form-item>
@@ -636,7 +697,11 @@
       <template v-else>
         <el-empty v-if="!aiPickResult" description="暂无结果" />
         <div v-else class="ai-block">
-          <div v-for="p in aiPickResult.picks" :key="p.code" class="ai-pick-item">
+          <div
+            v-for="p in aiPickResult.picks"
+            :key="p.code"
+            class="ai-pick-item"
+          >
             <div class="ai-pick-head">
               <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
               <span class="muted">{{ p.bias }}</span>
@@ -650,7 +715,7 @@
               <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
             </div>
             <div class="ai-value">
-              <div><b>风险：</b>{{ p.riskNotes?.join('；') || '—' }}</div>
+              <div><b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}</div>
             </div>
             <el-divider />
           </div>
@@ -710,33 +775,43 @@
       <template v-else>
         <el-empty v-if="!aiSectorResult" description="暂无结果" />
         <div v-else class="ai-block">
-          <div class="ai-row" v-for="s in aiSectorResult.bestSectors" :key="s.code">
+          <div
+            class="ai-row"
+            v-for="s in aiSectorResult.bestSectors"
+            :key="s.code"
+          >
             <div class="ai-label">#{{ s.rank }} {{ s.name }}</div>
             <div class="ai-value">
               <div class="muted">{{ s.kind }} · {{ s.code }}</div>
               <ul>
-                <li v-for="(x,i) in s.whyHot" :key="i">{{ x }}</li>
+                <li v-for="(x, i) in s.whyHot" :key="i">{{ x }}</li>
               </ul>
-              <div class="muted">风险：{{ s.riskNotes?.join('；') }}</div>
+              <div class="muted">风险：{{ s.riskNotes?.join("；") }}</div>
             </div>
           </div>
 
           <el-divider />
           <div v-if="aiSectorResult.openCandidates?.length" class="ai-block">
             <div class="ai-label">建议关注/开仓候选</div>
-            <div v-for="p in aiSectorResult.openCandidates" :key="p.code" class="ai-pick-item">
+            <div
+              v-for="p in aiSectorResult.openCandidates"
+              :key="p.code"
+              class="ai-pick-item"
+            >
               <div class="ai-pick-head">
                 <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
               </div>
               <ul>
-                <li v-for="(r,i) in p.reason" :key="i">{{ r }}</li>
+                <li v-for="(r, i) in p.reason" :key="i">{{ r }}</li>
               </ul>
               <div class="ai-value">
                 <div><b>入场：</b>{{ p.plan.entry }}</div>
                 <div><b>止损/无效：</b>{{ p.plan.invalidation }}</div>
                 <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
               </div>
-              <div class="ai-value"><b>风险：</b>{{ p.riskNotes?.join('；') || '—' }}</div>
+              <div class="ai-value">
+                <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
+              </div>
               <el-divider />
             </div>
           </div>
@@ -784,8 +859,12 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="aiSectorModal=false">关闭</el-button>
-        <el-button type="primary" :loading="aiSectorLoading" @click="runAiSectorNow">
+        <el-button @click="aiSectorModal = false">关闭</el-button>
+        <el-button
+          type="primary"
+          :loading="aiSectorLoading"
+          @click="runAiSectorNow"
+        >
           刷新
         </el-button>
       </template>
@@ -803,32 +882,45 @@
       <template v-else>
         <el-empty v-if="!aiAfterCloseResult" description="暂无结果" />
         <div v-else class="ai-block">
-          <div class="ai-row" v-for="s in aiAfterCloseResult.hotSectors" :key="s.code">
+          <div
+            class="ai-row"
+            v-for="s in aiAfterCloseResult.hotSectors"
+            :key="s.code"
+          >
             <div class="ai-label">#{{ s.rank }} {{ s.name }}</div>
             <div class="ai-value">
               <div class="muted">{{ s.kind }} · {{ s.code }}</div>
               <ul>
-                <li v-for="(x,i) in s.whyHot" :key="i">{{ x }}</li>
+                <li v-for="(x, i) in s.whyHot" :key="i">{{ x }}</li>
               </ul>
-              <div class="muted">风险：{{ s.riskNotes?.join('；') }}</div>
+              <div class="muted">风险：{{ s.riskNotes?.join("；") }}</div>
             </div>
           </div>
           <el-divider />
-          <div v-if="aiAfterCloseResult.openCandidates?.length" class="ai-block">
+          <div
+            v-if="aiAfterCloseResult.openCandidates?.length"
+            class="ai-block"
+          >
             <div class="ai-label">建议关注/开仓候选</div>
-            <div v-for="p in aiAfterCloseResult.openCandidates" :key="p.code" class="ai-pick-item">
+            <div
+              v-for="p in aiAfterCloseResult.openCandidates"
+              :key="p.code"
+              class="ai-pick-item"
+            >
               <div class="ai-pick-head">
                 <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
               </div>
               <ul>
-                <li v-for="(r,i) in p.reason" :key="i">{{ r }}</li>
+                <li v-for="(r, i) in p.reason" :key="i">{{ r }}</li>
               </ul>
               <div class="ai-value">
                 <div><b>入场：</b>{{ p.plan.entry }}</div>
                 <div><b>止损/无效：</b>{{ p.plan.invalidation }}</div>
                 <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
               </div>
-              <div class="ai-value"><b>风险：</b>{{ p.riskNotes?.join('；') || '—' }}</div>
+              <div class="ai-value">
+                <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
+              </div>
               <el-divider />
             </div>
           </div>
@@ -875,7 +967,7 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="aiAfterCloseModal=false">关闭</el-button>
+        <el-button @click="aiAfterCloseModal = false">关闭</el-button>
         <el-button
           type="primary"
           :loading="aiAfterCloseLoading"
@@ -908,7 +1000,11 @@
             />
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" :loading="aiScreenLoading" @click="runAiScreen">
+            <el-button
+              type="primary"
+              :loading="aiScreenLoading"
+              @click="runAiScreen"
+            >
               开始选股
             </el-button>
           </el-form-item>
@@ -922,25 +1018,40 @@
           <div class="ai-row" v-if="aiScreenResult.interpretation">
             <div class="ai-label">理解</div>
             <div class="ai-value">
-              <div><b>必须：</b>{{ aiScreenResult.interpretation.must?.join('；') }}</div>
-              <div><b>偏好：</b>{{ aiScreenResult.interpretation.prefer?.join('；') }}</div>
-              <div><b>避免：</b>{{ aiScreenResult.interpretation.avoid?.join('；') }}</div>
+              <div>
+                <b>必须：</b
+                >{{ aiScreenResult.interpretation.must?.join("；") }}
+              </div>
+              <div>
+                <b>偏好：</b
+                >{{ aiScreenResult.interpretation.prefer?.join("；") }}
+              </div>
+              <div>
+                <b>避免：</b
+                >{{ aiScreenResult.interpretation.avoid?.join("；") }}
+              </div>
             </div>
           </div>
 
-          <div v-for="p in aiScreenResult.picks" :key="p.code" class="ai-pick-item">
+          <div
+            v-for="p in aiScreenResult.picks"
+            :key="p.code"
+            class="ai-pick-item"
+          >
             <div class="ai-pick-head">
               <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
             </div>
             <ul>
-              <li v-for="(r,i) in p.reason" :key="i">{{ r }}</li>
+              <li v-for="(r, i) in p.reason" :key="i">{{ r }}</li>
             </ul>
             <div class="ai-value">
               <div><b>入场：</b>{{ p.plan.entry }}</div>
               <div><b>止损/无效：</b>{{ p.plan.invalidation }}</div>
               <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
             </div>
-            <div class="ai-value"><b>风险：</b>{{ p.riskNotes?.join('；') || '—' }}</div>
+            <div class="ai-value">
+              <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
+            </div>
             <el-divider />
           </div>
 
@@ -1056,7 +1167,8 @@ const STORAGE_HOLDING_FILTER_KEY = "vue-stock-viewer-holdingFilter";
 const STORAGE_AI_ANALYZE_HISTORY_KEY = "vue-stock-viewer-aiAnalyzeHistory";
 const STORAGE_AI_PICK_HISTORY_KEY = "vue-stock-viewer-aiPickHistory";
 const STORAGE_AI_SECTOR_HISTORY_KEY = "vue-stock-viewer-aiSectorHistory";
-const STORAGE_AI_AFTER_CLOSE_HISTORY_KEY = "vue-stock-viewer-aiAfterCloseHistory";
+const STORAGE_AI_AFTER_CLOSE_HISTORY_KEY =
+  "vue-stock-viewer-aiAfterCloseHistory";
 const STORAGE_AI_SCREEN_HISTORY_KEY = "vue-stock-viewer-aiScreenHistory";
 const ALL_GROUP_ID = "__all__";
 const ALERT_COOLDOWN = 3 * 60 * 1000;
@@ -1087,6 +1199,13 @@ const groupDrafts = ref<Record<string, string>>({});
 const hideMarketValue = ref(false);
 const toolsTab = ref<"overview" | "alerts" | "news" | "quant">("overview");
 const toolsCollapsed = ref(false);
+const isH5 = ref(false);
+function checkH5() {
+  const h5 = window.innerWidth <= 768;
+  if (h5 && !isH5.value) toolsCollapsed.value = true;
+  isH5.value = h5;
+  document.body.classList.toggle("h5", h5);
+}
 const holdingFilter = ref<"all" | "holding" | "not_holding">("all");
 const groupAssignModal = ref(false);
 const groupAssignStock = ref<StockItem | null>(null);
@@ -1143,7 +1262,12 @@ const aiSectorResult = ref<AiSectorNowResult | null>(null);
 const aiSectorHistory = ref<
   AiHistoryItem<
     AiSectorNowResult,
-    { topSectorN: number; topStockN: number; horizon: string; riskProfile: string }
+    {
+      topSectorN: number;
+      topStockN: number;
+      horizon: string;
+      riskProfile: string;
+    }
   >[]
 >([]);
 
@@ -1153,7 +1277,12 @@ const aiAfterCloseResult = ref<AiAfterCloseResult | null>(null);
 const aiAfterCloseHistory = ref<
   AiHistoryItem<
     AiAfterCloseResult,
-    { topSectorN: number; topStockN: number; horizon: string; riskProfile: string }
+    {
+      topSectorN: number;
+      topStockN: number;
+      horizon: string;
+      riskProfile: string;
+    }
   >[]
 >([]);
 
@@ -1407,7 +1536,11 @@ const aiAnalyzeHistoryForCurrentStock = computed(() => {
 
 const klineUrl = computed(() => {
   if (!klineStock.value) return "";
-  return buildKlineUrl(klineStock.value, klinePeriod.value, klineRefreshKey.value);
+  return buildKlineUrl(
+    klineStock.value,
+    klinePeriod.value,
+    klineRefreshKey.value,
+  );
 });
 
 const klineSignals = computed(() => {
@@ -1444,9 +1577,10 @@ const tradePlan = computed(() => {
   const takePrice = base * (1 + take / 100);
   const perShareLoss = formatMoney(base - stopPrice);
   const perShareGain = formatMoney(takePrice - base);
-  const amount = klineStock.value.heldAmount && klineStock.value.heldAmount > 0
-    ? klineStock.value.heldAmount
-    : 0;
+  const amount =
+    klineStock.value.heldAmount && klineStock.value.heldAmount > 0
+      ? klineStock.value.heldAmount
+      : 0;
   const totalLoss = amount ? formatMoney((base - stopPrice) * amount) : null;
   const totalGain = amount ? formatMoney((takePrice - base) * amount) : null;
   return {
@@ -1692,8 +1826,9 @@ function addAlert() {
   );
   if (exists) return;
   const name =
-    stockList.value.find((item) => item.code.toLowerCase() === code.toLowerCase())
-      ?.name || "";
+    stockList.value.find(
+      (item) => item.code.toLowerCase() === code.toLowerCase(),
+    )?.name || "";
   alerts.value = [
     ...alerts.value,
     {
@@ -1730,7 +1865,9 @@ function toggleAlert(alert: AlertRule, enabled: boolean) {
 function checkAlertCondition(alert: AlertRule, row: StockItem) {
   if (alert.type === "price") {
     const price = parseFloat(row.price || "0") || 0;
-    return alert.operator === ">=" ? price >= alert.value : price <= alert.value;
+    return alert.operator === ">="
+      ? price >= alert.value
+      : price <= alert.value;
   }
   const pct = parsePercent(row.percent || "0");
   return alert.operator === ">=" ? pct >= alert.value : pct <= alert.value;
@@ -1854,7 +1991,9 @@ async function runAiAnalyze() {
     );
   } catch (e) {
     console.error(e);
-    ElMessage.error("AI 分析失败：请检查 VOLCENGINE_API_KEY/模型ID 或服务是否可用");
+    ElMessage.error(
+      "AI 分析失败：请检查 VOLCENGINE_API_KEY/模型ID 或服务是否可用",
+    );
   } finally {
     aiAnalyzeLoading.value = false;
   }
@@ -1900,7 +2039,9 @@ async function runAiPick() {
     );
   } catch (e) {
     console.error(e);
-    ElMessage.error("AI 选股失败：请检查 VOLCENGINE_API_KEY/模型ID 或服务是否可用");
+    ElMessage.error(
+      "AI 选股失败：请检查 VOLCENGINE_API_KEY/模型ID 或服务是否可用",
+    );
   } finally {
     aiPickLoading.value = false;
   }
@@ -2012,7 +2153,12 @@ function addAiAnalyzeHistory(
 }
 
 function addAiPickHistory(
-  params: { topN: number; horizon: string; riskProfile: string; candidates: number },
+  params: {
+    topN: number;
+    horizon: string;
+    riskProfile: string;
+    candidates: number;
+  },
   result: AiPickResult,
 ) {
   const item: AiHistoryItem<
@@ -2032,12 +2178,22 @@ function addAiPickHistory(
 }
 
 function addAiSectorHistory(
-  params: { topSectorN: number; topStockN: number; horizon: string; riskProfile: string },
+  params: {
+    topSectorN: number;
+    topStockN: number;
+    horizon: string;
+    riskProfile: string;
+  },
   result: AiSectorNowResult,
 ) {
   const item: AiHistoryItem<
     AiSectorNowResult,
-    { topSectorN: number; topStockN: number; horizon: string; riskProfile: string }
+    {
+      topSectorN: number;
+      topStockN: number;
+      horizon: string;
+      riskProfile: string;
+    }
   > = {
     id: createHistoryId(),
     ts: Date.now(),
@@ -2052,12 +2208,22 @@ function addAiSectorHistory(
 }
 
 function addAiAfterCloseHistory(
-  params: { topSectorN: number; topStockN: number; horizon: string; riskProfile: string },
+  params: {
+    topSectorN: number;
+    topStockN: number;
+    horizon: string;
+    riskProfile: string;
+  },
   result: AiAfterCloseResult,
 ) {
   const item: AiHistoryItem<
     AiAfterCloseResult,
-    { topSectorN: number; topStockN: number; horizon: string; riskProfile: string }
+    {
+      topSectorN: number;
+      topStockN: number;
+      horizon: string;
+      riskProfile: string;
+    }
   > = {
     id: createHistoryId(),
     ts: Date.now(),
@@ -2072,7 +2238,12 @@ function addAiAfterCloseHistory(
 }
 
 function addAiScreenHistory(
-  params: { query: string; limit: number; horizon: string; riskProfile: string },
+  params: {
+    query: string;
+    limit: number;
+    horizon: string;
+    riskProfile: string;
+  },
   result: AiScreenResult,
 ) {
   const item: AiHistoryItem<
@@ -2120,7 +2291,12 @@ function applyAiPickHistory(
 function applyAiSectorHistory(
   item: AiHistoryItem<
     AiSectorNowResult,
-    { topSectorN: number; topStockN: number; horizon: string; riskProfile: string }
+    {
+      topSectorN: number;
+      topStockN: number;
+      horizon: string;
+      riskProfile: string;
+    }
   >,
 ) {
   aiSectorResult.value = item.result;
@@ -2132,7 +2308,12 @@ function applyAiSectorHistory(
 function applyAiAfterCloseHistory(
   item: AiHistoryItem<
     AiAfterCloseResult,
-    { topSectorN: number; topStockN: number; horizon: string; riskProfile: string }
+    {
+      topSectorN: number;
+      topStockN: number;
+      horizon: string;
+      riskProfile: string;
+    }
   >,
 ) {
   aiAfterCloseResult.value = item.result;
@@ -2281,6 +2462,9 @@ function onSelectSearchItem(item: SearchItem) {
 }
 
 watch(allCodes, () => loadStockList(), { immediate: false });
+watch([isH5, toolsTab], () => {
+  if (isH5.value && toolsTab.value === "alerts") toolsTab.value = "overview";
+});
 watch(groupManageModal, (open) => {
   if (open) updateGroupDrafts();
 });
@@ -2296,6 +2480,8 @@ watch(searchKeyword, (q) => {
   searchTimer = setTimeout(() => onSearch(), 300);
 });
 onMounted(() => {
+  checkH5();
+  window.addEventListener("resize", checkH5);
   loadGroups();
   loadStockPrice();
   loadAlerts();
@@ -2306,6 +2492,7 @@ onMounted(() => {
   loadNews();
 });
 onUnmounted(() => {
+  window.removeEventListener("resize", checkH5);
   if (realtimeTimer) {
     clearInterval(realtimeTimer);
     realtimeTimer = null;
@@ -2317,6 +2504,35 @@ onUnmounted(() => {
 .app {
   padding-bottom: 2rem;
   min-height: 100vh;
+}
+.app.h5 {
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
+.app.h5 .header-inner {
+  gap: 0.5rem 1rem;
+}
+.app.h5 .title {
+  font-size: 1.25rem;
+}
+.app.h5 .quick-links {
+  width: 100%;
+  margin-left: 0;
+  margin-top: 0.25rem;
+}
+.app.h5 .section-head {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.app.h5 .actions {
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.app.h5 .watchlist-section,
+.app.h5 .tools-section {
+  padding: 1rem;
+}
+.app.h5 .group-select {
+  min-width: 90px;
 }
 .header {
   margin-bottom: 1.5rem;
