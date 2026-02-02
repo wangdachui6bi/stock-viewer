@@ -157,3 +157,131 @@ export async function aiScreenStocks(params: {
   const { data } = await api.post<AiScreenResult>("/ai/a/screen", params);
   return data;
 }
+
+export type AiRadarResult = {
+  market: {
+    sentiment: "risk_on" | "risk_off" | "mixed" | string;
+    mainThemes: string[];
+    notes: string[];
+    riskLevel: "low" | "medium" | "high" | string;
+  };
+  baskets: {
+    hotMomentum: Array<{
+      code: string;
+      name: string;
+      rank: number;
+      reason: string[];
+      plan: { entry: string; invalidation: string; takeProfit: string };
+      riskNotes: string[];
+      tags?: string[];
+    }>;
+    lowAbsorbPullback: Array<{
+      code: string;
+      name: string;
+      rank: number;
+      reason: string[];
+      plan: { entry: string; invalidation: string; takeProfit: string };
+      riskNotes: string[];
+      tags?: string[];
+    }>;
+    ambushWatch: Array<{
+      code: string;
+      name: string;
+      rank: number;
+      reason: string[];
+      trigger: string[];
+      riskNotes: string[];
+      tags?: string[];
+    }>;
+    avoid: Array<{ code: string; name: string; why: string }>;
+  };
+  watchSectors?: string[];
+  disclaimer: string;
+};
+
+export async function aiMarketRadar(params?: {
+  limit?: number;
+  horizon?: string;
+  riskProfile?: string;
+}): Promise<AiRadarResult> {
+  const { data } = await api.post<AiRadarResult>("/ai/a/radar", params || {});
+  return data;
+}
+
+export type AiJournalResult = {
+  recap: {
+    oneSentence: string;
+    whatWorked: string[];
+    whatDidnt: string[];
+    keyLessons: string[];
+  };
+  tomorrowPlan: {
+    focus: string[];
+    riskControl: string[];
+    ifThen: string[];
+  };
+  watchlist: Array<{
+    code?: string;
+    name?: string;
+    whyWatch: string[];
+    trigger: string[];
+    invalidation: string;
+  }>;
+  checklist: {
+    beforeOpen: string[];
+    intraday: string[];
+    afterClose: string[];
+  };
+  disclaimer: string;
+};
+
+export async function aiJournal(params: {
+  notes: string;
+  trades?: any[];
+  context?: any;
+  horizon?: string;
+  riskProfile?: string;
+}): Promise<AiJournalResult> {
+  const { data } = await api.post<AiJournalResult>("/ai/a/journal", params);
+  return data;
+}
+
+export type AiPullbackResult = {
+  overview: {
+    style: string;
+    marketNotes: string[];
+    riskNotes: string[];
+  };
+  lowAbsorb: Array<{
+    code: string;
+    name: string;
+    rank: number;
+    why: string[];
+    trigger: string[];
+    plan: { entry: string; invalidation: string; takeProfit: string };
+    riskNotes: string[];
+  }>;
+  ambush: Array<{
+    code: string;
+    name: string;
+    rank: number;
+    why: string[];
+    trigger: string[];
+    invalidation: string;
+    riskNotes: string[];
+  }>;
+  avoid: Array<{ code: string; name: string; why: string }>;
+  disclaimer: string;
+};
+
+export async function aiPullbackScan(params: {
+  scope: "watchlist" | "market";
+  watchlistCodes?: string[];
+  marketLimit?: number;
+  topN?: number;
+  horizon?: string;
+  riskProfile?: string;
+}): Promise<AiPullbackResult> {
+  const { data } = await api.post<AiPullbackResult>("/ai/a/pullback", params);
+  return data;
+}

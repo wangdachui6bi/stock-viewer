@@ -292,6 +292,10 @@
                     >收盘复盘</el-dropdown-item
                   >
                   <el-dropdown-item command="screen">条件选股</el-dropdown-item>
+                  <el-dropdown-item command="radar">盘面雷达</el-dropdown-item>
+                  <el-dropdown-item command="journal"
+                    >复盘笔记</el-dropdown-item
+                  >
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -1094,6 +1098,485 @@
         </div>
       </div>
     </el-dialog>
+
+    <!-- 盘面雷达 -->
+    <el-dialog
+      v-model="aiRadarModal"
+      title="盘面雷达（A股）"
+      width="900px"
+      destroy-on-close
+      class="ai-dialog"
+    >
+      <div style="margin-bottom: 12px">
+        <el-form inline>
+          <el-form-item label="周期">
+            <el-select v-model="aiPickHorizon" style="width: 180px">
+              <el-option label="短线 1-5 天" value="swing_1_5_days" />
+              <el-option label="波段 1-4 周" value="swing_1_4_weeks" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="风险">
+            <el-select v-model="aiPickRisk" style="width: 140px">
+              <el-option label="低" value="low" />
+              <el-option label="中" value="medium" />
+              <el-option label="高" value="high" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-button
+              type="primary"
+              :loading="aiRadarLoading"
+              @click="runAiRadar"
+            >
+              刷新
+            </el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <el-skeleton v-if="aiRadarLoading" :rows="12" animated />
+      <template v-else>
+        <el-empty v-if="!aiRadarResult" description="暂无结果" />
+        <div v-else class="ai-block">
+          <div class="ai-row">
+            <div class="ai-label">市场</div>
+            <div class="ai-value">
+              <div><b>情绪：</b>{{ aiRadarResult.market.sentiment }}</div>
+              <div><b>风险：</b>{{ aiRadarResult.market.riskLevel }}</div>
+              <div>
+                <b>主线：</b>{{ aiRadarResult.market.mainThemes?.join("，") }}
+              </div>
+              <ul>
+                <li v-for="(x, i) in aiRadarResult.market.notes" :key="i">
+                  {{ x }}
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="ai-row" v-if="aiRadarResult.watchSectors?.length">
+            <div class="ai-label">观察板块</div>
+            <div class="ai-value">
+              {{ aiRadarResult.watchSectors.join("，") }}
+            </div>
+          </div>
+
+          <el-divider />
+          <div class="ai-label">强势热门（情绪/趋势）</div>
+          <div
+            v-for="p in aiRadarResult.baskets.hotMomentum"
+            :key="p.code"
+            class="ai-pick-item"
+          >
+            <div class="ai-pick-head">
+              <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
+              <span class="muted">{{ p.tags?.join("/") }}</span>
+            </div>
+            <ul>
+              <li v-for="(r, i) in p.reason" :key="i">{{ r }}</li>
+            </ul>
+            <div class="ai-value">
+              <div><b>入场：</b>{{ p.plan.entry }}</div>
+              <div><b>止损/无效：</b>{{ p.plan.invalidation }}</div>
+              <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
+            </div>
+            <div class="ai-value">
+              <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
+            </div>
+            <el-divider />
+          </div>
+
+          <div class="ai-label">低吸/回踩观察（偏稳）</div>
+          <div
+            v-for="p in aiRadarResult.baskets.lowAbsorbPullback"
+            :key="p.code"
+            class="ai-pick-item"
+          >
+            <div class="ai-pick-head">
+              <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
+              <span class="muted">{{ p.tags?.join("/") }}</span>
+            </div>
+            <ul>
+              <li v-for="(r, i) in p.reason" :key="i">{{ r }}</li>
+            </ul>
+            <div class="ai-value">
+              <div><b>入场：</b>{{ p.plan.entry }}</div>
+              <div><b>止损/无效：</b>{{ p.plan.invalidation }}</div>
+              <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
+            </div>
+            <div class="ai-value">
+              <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
+            </div>
+            <el-divider />
+          </div>
+
+          <div class="ai-label">埋伏观察（等待触发）</div>
+          <div
+            v-for="p in aiRadarResult.baskets.ambushWatch"
+            :key="p.code"
+            class="ai-pick-item"
+          >
+            <div class="ai-pick-head">
+              <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
+              <span class="muted">{{ p.tags?.join("/") }}</span>
+            </div>
+            <ul>
+              <li v-for="(r, i) in p.reason" :key="i">{{ r }}</li>
+            </ul>
+            <div class="ai-value"><b>触发：</b>{{ p.trigger?.join("；") }}</div>
+            <div class="ai-value">
+              <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
+            </div>
+            <el-divider />
+          </div>
+
+          <div class="ai-label">回避清单</div>
+          <ul>
+            <li v-for="x in aiRadarResult.baskets.avoid" :key="x.code">
+              <b>{{ x.name }} ({{ x.code }})</b>：{{ x.why }}
+            </li>
+          </ul>
+
+          <div class="ai-disclaimer">{{ aiRadarResult.disclaimer }}</div>
+        </div>
+      </template>
+      <el-divider />
+      <div class="ai-history">
+        <div class="ai-history-head">
+          <div class="ai-history-title">历史记录</div>
+          <el-button
+            link
+            type="danger"
+            size="small"
+            :disabled="!aiRadarHistory.length"
+            @click="clearAiRadarHistory"
+          >
+            清空
+          </el-button>
+        </div>
+        <el-empty v-if="!aiRadarHistory.length" description="暂无历史" />
+        <div v-else class="ai-history-list">
+          <div
+            v-for="item in aiRadarHistory"
+            :key="item.id"
+            class="ai-history-item"
+          >
+            <div class="ai-history-main">
+              <div class="ai-history-title-row">
+                <b>盘面雷达</b>
+                <span class="muted">{{ formatDateTime(item.ts) }}</span>
+              </div>
+              <div class="muted">
+                周期 {{ formatHorizon(item.params.horizon) }} · 风险
+                {{ formatRisk(item.params.riskProfile) }}
+              </div>
+            </div>
+            <el-button size="small" @click="applyAiRadarHistory(item)">
+              查看
+            </el-button>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="aiRadarModal = false">关闭</el-button>
+        <el-button type="primary" :loading="aiRadarLoading" @click="runAiRadar"
+          >刷新</el-button
+        >
+      </template>
+    </el-dialog>
+
+    <!-- 低吸/回踩扫描 -->
+    <el-dialog
+      v-model="aiPullbackModal"
+      title="低吸/回踩扫描（AI）"
+      width="920px"
+      destroy-on-close
+      class="ai-dialog"
+    >
+      <div style="margin-bottom: 12px">
+        <el-form inline>
+          <el-form-item label="范围">
+            <el-select v-model="aiPullbackScope" style="width: 140px">
+              <el-option label="全市场活跃" value="market" />
+              <el-option label="仅自选" value="watchlist" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="aiPullbackScope === 'market'" label="市场候选">
+            <el-input-number
+              v-model="aiPullbackMarketLimit"
+              :min="50"
+              :max="800"
+            />
+          </el-form-item>
+          <el-form-item label="取前">
+            <el-input-number v-model="aiPullbackTopN" :min="30" :max="200" />
+          </el-form-item>
+          <el-form-item>
+            <el-button
+              type="primary"
+              :loading="aiPullbackLoading"
+              @click="runAiPullbackScan"
+            >
+              开始扫描
+            </el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <el-skeleton v-if="aiPullbackLoading" :rows="12" animated />
+      <template v-else>
+        <el-empty v-if="!aiPullbackResult" description="暂无结果" />
+        <div v-else class="ai-block">
+          <div class="ai-row">
+            <div class="ai-label">概览</div>
+            <div class="ai-value">
+              <ul>
+                <li
+                  v-for="(x, i) in aiPullbackResult.overview.marketNotes"
+                  :key="i"
+                >
+                  {{ x }}
+                </li>
+              </ul>
+              <div>
+                <b>风险：</b
+                >{{ aiPullbackResult.overview.riskNotes?.join("；") }}
+              </div>
+            </div>
+          </div>
+          <el-divider />
+
+          <div class="ai-label">回踩低吸（波段）</div>
+          <div
+            v-for="p in aiPullbackResult.lowAbsorb"
+            :key="p.code"
+            class="ai-pick-item"
+          >
+            <div class="ai-pick-head">
+              <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
+            </div>
+            <ul>
+              <li v-for="(r, i) in p.why" :key="i">{{ r }}</li>
+            </ul>
+            <div class="ai-value"><b>触发：</b>{{ p.trigger?.join("；") }}</div>
+            <div class="ai-value">
+              <div><b>入场：</b>{{ p.plan.entry }}</div>
+              <div><b>无效/止损：</b>{{ p.plan.invalidation }}</div>
+              <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
+            </div>
+            <div class="ai-value">
+              <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
+            </div>
+            <el-divider />
+          </div>
+
+          <div class="ai-label">埋伏观察（等待触发）</div>
+          <div
+            v-for="p in aiPullbackResult.ambush"
+            :key="p.code"
+            class="ai-pick-item"
+          >
+            <div class="ai-pick-head">
+              <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
+            </div>
+            <ul>
+              <li v-for="(r, i) in p.why" :key="i">{{ r }}</li>
+            </ul>
+            <div class="ai-value"><b>触发：</b>{{ p.trigger?.join("；") }}</div>
+            <div class="ai-value"><b>无效：</b>{{ p.invalidation }}</div>
+            <div class="ai-value">
+              <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
+            </div>
+            <el-divider />
+          </div>
+
+          <div class="ai-label">回避</div>
+          <ul>
+            <li v-for="x in aiPullbackResult.avoid" :key="x.code">
+              <b>{{ x.name }} ({{ x.code }})</b>：{{ x.why }}
+            </li>
+          </ul>
+
+          <div class="ai-disclaimer">{{ aiPullbackResult.disclaimer }}</div>
+        </div>
+      </template>
+      <template #footer>
+        <el-button @click="aiPullbackModal = false">关闭</el-button>
+      </template>
+    </el-dialog>
+    <!-- 复盘笔记 -->
+    <el-dialog
+      v-model="aiJournalModal"
+      title="复盘笔记（AI 整理）"
+      width="920px"
+      destroy-on-close
+      class="ai-dialog"
+    >
+      <div style="margin-bottom: 12px">
+        <el-form>
+          <el-form-item label="复盘内容（随便写，越真实越好）">
+            <el-input
+              v-model="aiJournalNotes"
+              type="textarea"
+              :rows="10"
+              placeholder="记录今天的交易、想法、纪律、情绪、计划…"
+            />
+          </el-form-item>
+          <el-button
+            type="primary"
+            :loading="aiJournalLoading"
+            @click="runAiJournal"
+          >
+            生成复盘
+          </el-button>
+        </el-form>
+      </div>
+
+      <el-skeleton v-if="aiJournalLoading" :rows="12" animated />
+      <template v-else>
+        <el-empty v-if="!aiJournalResult" description="暂无结果" />
+        <div v-else class="ai-block">
+          <div class="ai-row">
+            <div class="ai-label">一句话</div>
+            <div class="ai-value">{{ aiJournalResult.recap.oneSentence }}</div>
+          </div>
+          <div class="ai-row">
+            <div class="ai-label">做得好</div>
+            <div class="ai-value">
+              <ul>
+                <li v-for="(x, i) in aiJournalResult.recap.whatWorked" :key="i">
+                  {{ x }}
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div class="ai-row">
+            <div class="ai-label">做得差</div>
+            <div class="ai-value">
+              <ul>
+                <li v-for="(x, i) in aiJournalResult.recap.whatDidnt" :key="i">
+                  {{ x }}
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div class="ai-row">
+            <div class="ai-label">关键教训</div>
+            <div class="ai-value">
+              <ul>
+                <li v-for="(x, i) in aiJournalResult.recap.keyLessons" :key="i">
+                  {{ x }}
+                </li>
+              </ul>
+            </div>
+          </div>
+          <el-divider />
+          <div class="ai-row">
+            <div class="ai-label">明日计划</div>
+            <div class="ai-value">
+              <div>
+                <b>关注：</b
+                >{{ aiJournalResult.tomorrowPlan.focus?.join("；") }}
+              </div>
+              <div>
+                <b>风控：</b
+                >{{ aiJournalResult.tomorrowPlan.riskControl?.join("；") }}
+              </div>
+              <div>
+                <b>If-Then：</b
+                >{{ aiJournalResult.tomorrowPlan.ifThen?.join("；") }}
+              </div>
+            </div>
+          </div>
+          <div class="ai-row">
+            <div class="ai-label">观察池</div>
+            <div class="ai-value">
+              <div
+                v-for="(x, idx) in aiJournalResult.watchlist"
+                :key="idx"
+                style="margin-bottom: 8px"
+              >
+                <b>{{ x.name || x.code || "标的" }}</b>
+                <div class="muted">原因：{{ x.whyWatch?.join("；") }}</div>
+                <div class="muted">触发：{{ x.trigger?.join("；") }}</div>
+                <div class="muted">无效：{{ x.invalidation }}</div>
+              </div>
+            </div>
+          </div>
+          <div class="ai-row">
+            <div class="ai-label">清单</div>
+            <div class="ai-value">
+              <div>
+                <b>开盘前：</b
+                >{{ aiJournalResult.checklist.beforeOpen?.join("；") }}
+              </div>
+              <div>
+                <b>盘中：</b
+                >{{ aiJournalResult.checklist.intraday?.join("；") }}
+              </div>
+              <div>
+                <b>收盘后：</b
+                >{{ aiJournalResult.checklist.afterClose?.join("；") }}
+              </div>
+            </div>
+          </div>
+          <div class="ai-disclaimer">{{ aiJournalResult.disclaimer }}</div>
+        </div>
+      </template>
+      <el-divider />
+      <div class="ai-history">
+        <div class="ai-history-head">
+          <div class="ai-history-title">历史记录</div>
+          <el-button
+            link
+            type="danger"
+            size="small"
+            :disabled="!aiJournalHistory.length"
+            @click="clearAiJournalHistory"
+          >
+            清空
+          </el-button>
+        </div>
+        <el-empty v-if="!aiJournalHistory.length" description="暂无历史" />
+        <div v-else class="ai-history-list">
+          <div
+            v-for="item in aiJournalHistory"
+            :key="item.id"
+            class="ai-history-item"
+          >
+            <div class="ai-history-main">
+              <div class="ai-history-title-row">
+                <b>复盘笔记</b>
+                <span class="muted">{{ formatDateTime(item.ts) }}</span>
+              </div>
+              <div class="muted">
+                周期 {{ formatHorizon(item.params.horizon) }} · 风险
+                {{ formatRisk(item.params.riskProfile) }}
+              </div>
+              <div
+                v-if="item.params.notes"
+                class="ai-history-query"
+                style="
+                  max-width: 100%;
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                  white-space: nowrap;
+                "
+              >
+                {{ (item.params.notes || "").slice(0, 60)
+                }}{{ (item.params.notes || "").length > 60 ? "…" : "" }}
+              </div>
+            </div>
+            <el-button size="small" @click="applyAiJournalHistory(item)">
+              查看
+            </el-button>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="aiJournalModal = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1117,6 +1600,9 @@ import {
   aiSectorNow,
   aiAfterClose,
   aiScreenStocks,
+  aiMarketRadar,
+  aiJournal,
+  aiPullbackScan,
 } from "./api/ai";
 import type {
   AiAnalyzeResult,
@@ -1124,6 +1610,9 @@ import type {
   AiSectorNowResult,
   AiAfterCloseResult,
   AiScreenResult,
+  AiRadarResult,
+  AiJournalResult,
+  AiPullbackResult,
 } from "./api/ai";
 import type {
   StockItem,
@@ -1170,6 +1659,8 @@ const STORAGE_AI_SECTOR_HISTORY_KEY = "vue-stock-viewer-aiSectorHistory";
 const STORAGE_AI_AFTER_CLOSE_HISTORY_KEY =
   "vue-stock-viewer-aiAfterCloseHistory";
 const STORAGE_AI_SCREEN_HISTORY_KEY = "vue-stock-viewer-aiScreenHistory";
+const STORAGE_AI_RADAR_HISTORY_KEY = "vue-stock-viewer-aiRadarHistory";
+const STORAGE_AI_JOURNAL_HISTORY_KEY = "vue-stock-viewer-aiJournalHistory";
 const ALL_GROUP_ID = "__all__";
 const ALERT_COOLDOWN = 3 * 60 * 1000;
 const AI_HISTORY_LIMIT = 20;
@@ -1298,6 +1789,36 @@ const aiScreenHistory = ref<
   >[]
 >([]);
 
+// AI · 盘面雷达 / 复盘笔记
+const aiRadarModal = ref(false);
+const aiRadarLoading = ref(false);
+const aiRadarResult = ref<AiRadarResult | null>(null);
+const aiRadarHistory = ref<
+  AiHistoryItem<
+    AiRadarResult,
+    { limit: number; horizon: string; riskProfile: string }
+  >[]
+>([]);
+
+const aiJournalModal = ref(false);
+const aiJournalLoading = ref(false);
+const aiJournalNotes = ref("");
+const aiJournalResult = ref<AiJournalResult | null>(null);
+const aiJournalHistory = ref<
+  AiHistoryItem<
+    AiJournalResult,
+    { notes: string; horizon: string; riskProfile: string }
+  >[]
+>([]);
+
+// AI · 低吸/回踩扫描
+const aiPullbackModal = ref(false);
+const aiPullbackLoading = ref(false);
+const aiPullbackScope = ref<"watchlist" | "market">("market");
+const aiPullbackMarketLimit = ref(400);
+const aiPullbackTopN = ref(120);
+const aiPullbackResult = ref<AiPullbackResult | null>(null);
+
 function createGroupId() {
   return `g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
@@ -1422,6 +1943,14 @@ function saveAiHistory() {
     STORAGE_AI_SCREEN_HISTORY_KEY,
     JSON.stringify(aiScreenHistory.value),
   );
+  localStorage.setItem(
+    STORAGE_AI_RADAR_HISTORY_KEY,
+    JSON.stringify(aiRadarHistory.value),
+  );
+  localStorage.setItem(
+    STORAGE_AI_JOURNAL_HISTORY_KEY,
+    JSON.stringify(aiJournalHistory.value),
+  );
 }
 
 function loadAiHistory() {
@@ -1430,6 +1959,8 @@ function loadAiHistory() {
   aiSectorHistory.value = readHistory(STORAGE_AI_SECTOR_HISTORY_KEY);
   aiAfterCloseHistory.value = readHistory(STORAGE_AI_AFTER_CLOSE_HISTORY_KEY);
   aiScreenHistory.value = readHistory(STORAGE_AI_SCREEN_HISTORY_KEY);
+  aiRadarHistory.value = readHistory(STORAGE_AI_RADAR_HISTORY_KEY);
+  aiJournalHistory.value = readHistory(STORAGE_AI_JOURNAL_HISTORY_KEY);
 }
 
 function saveGroups() {
@@ -2006,6 +2537,9 @@ function handleAiCommand(command: string) {
   else if (command === "sector") openAiSectorModal();
   else if (command === "afterClose") openAiAfterCloseModal();
   else if (command === "screen") openAiScreenModal();
+  else if (command === "radar") openAiRadarModal();
+  else if (command === "journal") openAiJournalModal();
+  else if (command === "pullback") openAiPullbackModal();
 }
 
 function openAiPickModal() {
@@ -2132,6 +2666,122 @@ async function runAiScreen() {
   }
 }
 
+function openAiRadarModal() {
+  aiRadarModal.value = true;
+  aiRadarLoading.value = false;
+}
+
+async function runAiRadar() {
+  aiRadarModal.value = true;
+  aiRadarLoading.value = true;
+  aiRadarResult.value = null;
+  try {
+    const params = {
+      limit: 280,
+      horizon: aiPickHorizon.value,
+      riskProfile: aiPickRisk.value,
+    };
+    const result = await aiMarketRadar(params);
+    aiRadarResult.value = result;
+    addAiRadarHistory(params, result);
+  } catch (e) {
+    console.error(e);
+    ElMessage.error("盘面雷达失败：请检查后端服务/开源接口/AI KEY");
+  } finally {
+    aiRadarLoading.value = false;
+  }
+}
+
+function openAiJournalModal() {
+  aiJournalModal.value = true;
+  aiJournalLoading.value = false;
+  aiJournalResult.value = null;
+  if (!aiJournalNotes.value) {
+    aiJournalNotes.value = `
+【今天做了什么】
+
+【做得好的】
+
+【做得差的/情绪】
+
+【明天计划】
+
+【观察池】
+`;
+  }
+}
+
+async function runAiJournal() {
+  const notes = aiJournalNotes.value.trim();
+  if (!notes) {
+    ElMessage.warning("先写点复盘内容");
+    return;
+  }
+  aiJournalLoading.value = true;
+  aiJournalResult.value = null;
+  try {
+    const result = await aiJournal({
+      notes,
+      horizon: aiPickHorizon.value,
+      riskProfile: aiPickRisk.value,
+      context: {
+        holdings: displayList.value
+          .filter((x) => Number((x as any).holdAmount || 0) > 0)
+          .map((x) => ({
+            code: x.code,
+            name: x.name,
+            holdAmount: (x as any).holdAmount,
+            holdUnitPrice: (x as any).holdUnitPrice,
+            todayHoldUnitPrice: (x as any).todayHoldUnitPrice,
+            percent: x.percent,
+            price: x.price,
+          })),
+      },
+    });
+    aiJournalResult.value = result;
+    addAiJournalHistory(
+      {
+        notes: aiJournalNotes.value,
+        horizon: aiPickHorizon.value,
+        riskProfile: aiPickRisk.value,
+      },
+      result,
+    );
+  } catch (e) {
+    console.error(e);
+    ElMessage.error("复盘笔记失败：请检查后端服务/AI KEY");
+  } finally {
+    aiJournalLoading.value = false;
+  }
+}
+
+function openAiPullbackModal() {
+  aiPullbackModal.value = true;
+  aiPullbackLoading.value = false;
+  aiPullbackResult.value = null;
+}
+
+async function runAiPullbackScan() {
+  aiPullbackModal.value = true;
+  aiPullbackLoading.value = true;
+  aiPullbackResult.value = null;
+  try {
+    const result = await aiPullbackScan({
+      scope: aiPullbackScope.value,
+      watchlistCodes: displayList.value.map((x) => x.code),
+      marketLimit: aiPullbackMarketLimit.value,
+      topN: aiPullbackTopN.value,
+      horizon: aiPickHorizon.value,
+      riskProfile: aiPickRisk.value,
+    });
+    aiPullbackResult.value = result;
+  } catch (e) {
+    console.error(e);
+    ElMessage.error("低吸/回踩扫描失败：请检查后端服务/开源接口/AI KEY");
+  } finally {
+    aiPullbackLoading.value = false;
+  }
+}
 function addAiAnalyzeHistory(
   params: { stock: StockItem; horizon: string; riskProfile: string },
   result: AiAnalyzeResult,
@@ -2322,6 +2972,46 @@ function applyAiAfterCloseHistory(
   aiAfterCloseModal.value = true;
 }
 
+function addAiRadarHistory(
+  params: { limit: number; horizon: string; riskProfile: string },
+  result: AiRadarResult,
+) {
+  const item: AiHistoryItem<
+    AiRadarResult,
+    { limit: number; horizon: string; riskProfile: string }
+  > = {
+    id: createHistoryId(),
+    ts: Date.now(),
+    params,
+    result,
+  };
+  aiRadarHistory.value = [item, ...aiRadarHistory.value].slice(
+    0,
+    AI_HISTORY_LIMIT,
+  );
+  saveAiHistory();
+}
+
+function addAiJournalHistory(
+  params: { notes: string; horizon: string; riskProfile: string },
+  result: AiJournalResult,
+) {
+  const item: AiHistoryItem<
+    AiJournalResult,
+    { notes: string; horizon: string; riskProfile: string }
+  > = {
+    id: createHistoryId(),
+    ts: Date.now(),
+    params,
+    result,
+  };
+  aiJournalHistory.value = [item, ...aiJournalHistory.value].slice(
+    0,
+    AI_HISTORY_LIMIT,
+  );
+  saveAiHistory();
+}
+
 function applyAiScreenHistory(
   item: AiHistoryItem<
     AiScreenResult,
@@ -2334,6 +3024,31 @@ function applyAiScreenHistory(
   aiPickRisk.value = item.params.riskProfile;
   aiScreenResult.value = item.result;
   aiScreenModal.value = true;
+}
+
+function applyAiRadarHistory(
+  item: AiHistoryItem<
+    AiRadarResult,
+    { limit: number; horizon: string; riskProfile: string }
+  >,
+) {
+  aiPickHorizon.value = item.params.horizon;
+  aiPickRisk.value = item.params.riskProfile;
+  aiRadarResult.value = item.result;
+  aiRadarModal.value = true;
+}
+
+function applyAiJournalHistory(
+  item: AiHistoryItem<
+    AiJournalResult,
+    { notes: string; horizon: string; riskProfile: string }
+  >,
+) {
+  aiJournalNotes.value = item.params.notes;
+  aiPickHorizon.value = item.params.horizon;
+  aiPickRisk.value = item.params.riskProfile;
+  aiJournalResult.value = item.result;
+  aiJournalModal.value = true;
 }
 
 function clearAiAnalyzeHistory() {
@@ -2363,6 +3078,16 @@ function clearAiAfterCloseHistory() {
 
 function clearAiScreenHistory() {
   aiScreenHistory.value = [];
+  saveAiHistory();
+}
+
+function clearAiRadarHistory() {
+  aiRadarHistory.value = [];
+  saveAiHistory();
+}
+
+function clearAiJournalHistory() {
+  aiJournalHistory.value = [];
   saveAiHistory();
 }
 

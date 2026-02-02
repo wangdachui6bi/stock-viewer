@@ -1319,6 +1319,674 @@ app.post("/api/ai/a/screen", async (req, res) => {
   }
 });
 
+// 4) 盘面雷达：热门股/低吸候选/埋伏候选/风险提示（AI + 快照 + 板块 + 新闻标题）
+app.post("/api/ai/a/radar", async (req, res) => {
+  try {
+    const { limit, horizon, riskProfile } = req.body || {};
+
+    const [sectors, news, snapshot] = await Promise.all([
+      fetchHotSectors(15),
+      fetchNewsHeadlines(15),
+      fetchAshareSnapshot(Math.min(Number(limit) || 260, 500)),
+    ]);
+
+    const topByAmount = [...snapshot]
+      .sort(
+        (a: any, b: any) => (Number(b.amount) || 0) - (Number(a.amount) || 0),
+      )
+      .slice(0, 60);
+    const topGainers = [...snapshot]
+      .sort(
+        (a: any, b: any) => (Number(b.percent) || 0) - (Number(a.percent) || 0),
+      )
+      .slice(0, 60);
+    const topLosers = [...snapshot]
+      .sort(
+        (a: any, b: any) => (Number(a.percent) || 0) - (Number(b.percent) || 0),
+      )
+      .slice(0, 60);
+
+    const sectorCandidates = [
+      ...sectors.industry.map((s) => ({ ...s, kind: "industry" })),
+      ...sectors.concept.map((s) => ({ ...s, kind: "concept" })),
+    ].slice(0, 40);
+
+    const system: ChatMessage = {
+      role: "system",
+      content:
+        "你是A股盘面雷达助手（短线/波段/低吸/埋伏/风险控制）。你只能基于传入的行情字段（价格、涨跌幅、开高低、成交量/成交额）和板块字段（涨跌幅/成交额/资金）以及提供的新闻标题进行归因与分组，不要编造不存在的消息细节，不要编造基本面/财务数据。输出必须是严格 JSON（纯 JSON 字符串），不要输出 Markdown/```。必须包含风险提示：不构成投资建议。",
+    };
+
+    const user: ChatMessage = {
+      role: "user",
+      content: JSON.stringify(
+        {
+          task: "market_radar",
+          horizon: horizon || "swing_1_5_days",
+          riskProfile: riskProfile || "medium",
+          sectorCandidates,
+          newsHeadlines: news,
+          topByAmount,
+          topGainers,
+          topLosers,
+          outputSchema: {
+            market: {
+              sentiment: "risk_on|risk_off|mixed",
+              mainThemes: ["主题/板块"],
+              notes: ["盘面要点"],
+              riskLevel: "low|medium|high",
+            },
+            baskets: {
+              hotMomentum: [
+                {
+                  code: "",
+                  name: "",
+                  rank: 1,
+                  reason: ["为何热"],
+                  plan: { entry: "", invalidation: "", takeProfit: "" },
+                  riskNotes: [""],
+                  tags: ["强势", "情绪"],
+                },
+              ],
+              lowAbsorbPullback: [
+                {
+                  code: "",
+                  name: "",
+                  rank: 1,
+                  reason: ["为何适合低吸/回踩观察"],
+                  plan: { entry: "", invalidation: "", takeProfit: "" },
+                  riskNotes: [""],
+                  tags: ["低吸", "回踩"],
+                },
+              ],
+              ambushWatch: [
+                {
+                  code: "",
+                  name: "",
+                  rank: 1,
+                  reason: ["为何适合埋伏观察"],
+                  trigger: ["观察触发条件"],
+                  riskNotes: [""],
+                  tags: ["埋伏", "等待确认"],
+                },
+              ],
+              avoid: [
+                {
+                  code: "",
+                  name: "",
+                  why: "为何回避",
+                },
+              ],
+            },
+            watchSectors: ["板块名"],
+            disclaimer: "固定写：不构成投资建议",
+          },
+        },
+        null,
+        2,
+      ),
+    };
+
+    const content = await callLLM([system, user]);
+    res.json(safeJsonParse(content));
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("/api/ai/a/radar", message);
+    res.status(500).json({ error: message });
+  }
+});
+
+// 5) 复盘笔记（AI）：把你的交易记录/心得整理成“做得好/做得差/明日计划/观察池/清单”
+app.post("/api/ai/a/journal", async (req, res) => {
+  try {
+    const { notes, trades, horizon, riskProfile, context } = req.body || {};
+    const text = String(notes || "").trim();
+    if (!text && (!Array.isArray(trades) || trades.length === 0)) {
+      return res.status(400).json({ error: "missing notes" });
+    }
+
+    const system: ChatMessage = {
+      role: "system",
+      content:
+        "你是A股交易复盘教练与记录整理助手。你只根据用户提供的交易/感受/复盘笔记进行总结和行动化，不要编造用户没有提供的成交、新闻、财务等细节。输出必须是严格 JSON（纯 JSON 字符串），不要输出 Markdown/```。必须包含风险提示：不构成投资建议。",
+    };
+
+    const user: ChatMessage = {
+      role: "user",
+      content: JSON.stringify(
+        {
+          task: "journal",
+          horizon: horizon || "swing_1_5_days",
+          riskProfile: riskProfile || "medium",
+          notes: text,
+          trades: Array.isArray(trades) ? trades : [],
+          context: context || {},
+          outputSchema: {
+            recap: {
+              oneSentence: "一句话总结",
+              whatWorked: [""],
+              whatDidnt: [""],
+              keyLessons: [""],
+            },
+            tomorrowPlan: {
+              focus: [""],
+              riskControl: [""],
+              ifThen: ["如果...那么..."],
+            },
+            watchlist: [
+              {
+                code: "",
+                name: "",
+                whyWatch: [""],
+                trigger: ["触发条件"],
+                invalidation: "无效/止损依据",
+              },
+            ],
+            checklist: {
+              beforeOpen: [""],
+              intraday: [""],
+              afterClose: [""],
+            },
+            disclaimer: "固定写：不构成投资建议",
+          },
+        },
+        null,
+        2,
+      ),
+    };
+
+    const content = await callLLM([system, user]);
+    res.json(safeJsonParse(content));
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("/api/ai/a/journal", message);
+    res.status(500).json({ error: message });
+  }
+});
+
+// ===== 低吸/回踩扫描（规则 + AI 整理） =====
+
+type ScanBar = {
+  ts: number;
+  date: string;
+  open: number;
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+  amount?: number;
+};
+
+type PullbackSignal = {
+  code: string;
+  name?: string;
+  strategy: "swing_pullback" | "reversal_rsi";
+  signal: "buy" | "watch" | "none";
+  score: number;
+  reason: string[];
+  entry: number;
+  stop: number;
+  take: number;
+  last: {
+    close: number;
+    percent?: number;
+    amount?: number;
+  };
+};
+
+function inferAsharePrefix(code6: string): "sh" | "sz" | "bj" {
+  const s = String(code6 || "").replace(/\D/g, "");
+  if (s.startsWith("6")) return "sh";
+  if (s.startsWith("0") || s.startsWith("3")) return "sz";
+  // 8/4 常见为北交所
+  return "bj";
+}
+
+function toAshareCode(raw: string): string {
+  const s = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (s.startsWith("sh") || s.startsWith("sz") || s.startsWith("bj")) return s;
+  const digits = s.replace(/\D/g, "");
+  if (!digits) return s;
+  const prefix = inferAsharePrefix(digits);
+  return `${prefix}${digits}`;
+}
+
+function sma(values: number[], period: number): Array<number | null> {
+  const out: Array<number | null> = new Array(values.length).fill(null);
+  if (period <= 0) return out;
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i];
+    if (i >= period) sum -= values[i - period];
+    if (i >= period - 1) out[i] = sum / period;
+  }
+  return out;
+}
+
+function rsi(values: number[], period = 14): Array<number | null> {
+  const out: Array<number | null> = new Array(values.length).fill(null);
+  if (values.length < period + 1) return out;
+
+  let gain = 0;
+  let loss = 0;
+  for (let i = 1; i <= period; i++) {
+    const chg = values[i] - values[i - 1];
+    if (chg >= 0) gain += chg;
+    else loss -= chg;
+  }
+  let avgGain = gain / period;
+  let avgLoss = loss / period;
+  out[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+
+  for (let i = period + 1; i < values.length; i++) {
+    const chg = values[i] - values[i - 1];
+    const g = chg > 0 ? chg : 0;
+    const l = chg < 0 ? -chg : 0;
+    avgGain = (avgGain * (period - 1) + g) / period;
+    avgLoss = (avgLoss * (period - 1) + l) / period;
+    out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+
+  return out;
+}
+
+function atr(bars: ScanBar[], period = 14): Array<number | null> {
+  const out: Array<number | null> = new Array(bars.length).fill(null);
+  if (bars.length < period + 1) return out;
+
+  const tr: number[] = [];
+  for (let i = 0; i < bars.length; i++) {
+    if (i === 0) {
+      tr.push(bars[i].high - bars[i].low);
+    } else {
+      const prevClose = bars[i - 1].close;
+      const highLow = bars[i].high - bars[i].low;
+      const highClose = Math.abs(bars[i].high - prevClose);
+      const lowClose = Math.abs(bars[i].low - prevClose);
+      tr.push(Math.max(highLow, highClose, lowClose));
+    }
+  }
+
+  let sum = 0;
+  for (let i = 0; i < tr.length; i++) {
+    sum += tr[i];
+    if (i === period - 1) {
+      out[i] = sum / period;
+    } else if (i >= period) {
+      const prev = out[i - 1];
+      if (prev != null) out[i] = (prev * (period - 1) + tr[i]) / period;
+    }
+  }
+
+  return out;
+}
+
+function analyzeSwingPullback(bars: ScanBar[]): {
+  signal: PullbackSignal["signal"];
+  score: number;
+  reason: string[];
+  entry: number;
+  stop: number;
+  take: number;
+} {
+  const trendMa = 20;
+  const pullbackMa = 10;
+  const slopeLookback = 5;
+  const strongDist = 1;
+  const weakDist = 2;
+  const atrPeriod = 14;
+  const atrStopMult = 1.0;
+  const atrTakeMult = 2.2;
+
+  const closes = bars.map((b) => b.close);
+  const maTrend = sma(closes, trendMa);
+  const maPull = sma(closes, pullbackMa);
+  const a = atr(bars, atrPeriod);
+
+  const i = bars.length - 1;
+  const c = closes[i];
+
+  const reasons: string[] = [];
+  let score = 0;
+
+  const maTNow = maTrend[i];
+  const maTPrev = maTrend[i - slopeLookback];
+  if (maTNow != null && maTPrev != null && maTNow > maTPrev) {
+    reasons.push("趋势向上（20日均线抬升）");
+    score += 35;
+  } else {
+    reasons.push("趋势不明（更偏震荡）");
+  }
+
+  const maPNow = maPull[i];
+  if (maPNow != null) {
+    const distPct = (Math.abs(c - maPNow) / maPNow) * 100;
+    if (distPct <= strongDist) {
+      reasons.push(`回踩到位（距10日均线约 ${distPct.toFixed(2)}%）`);
+      score += 35;
+    } else if (distPct <= weakDist) {
+      reasons.push(`接近回踩位（距10日均线约 ${distPct.toFixed(2)}%）`);
+      score += 20;
+    } else {
+      reasons.push(`离回踩位偏远（距10日均线约 ${distPct.toFixed(2)}%）`);
+    }
+
+    if (c >= maPNow) {
+      reasons.push("回踩未破位（收盘在10日线之上）");
+      score += 20;
+    } else {
+      reasons.push("回踩破位（收盘跌破10日线，需谨慎）");
+      score += 5;
+    }
+  }
+
+  score = Math.min(100, score);
+  const atrNow = a[i] ?? 0;
+  const entry = c;
+  const stop = atrNow ? c - atrStopMult * atrNow : c * 0.97;
+  const take = atrNow ? c + atrTakeMult * atrNow : c * 1.08;
+
+  let signal: PullbackSignal["signal"] = "none";
+  if (score >= 70) signal = "buy";
+  else if (score >= 45) signal = "watch";
+
+  return { signal, score, reason: reasons, entry, stop, take };
+}
+
+function analyzeReversalRSI(bars: ScanBar[]): {
+  signal: PullbackSignal["signal"];
+  score: number;
+  reason: string[];
+  entry: number;
+  stop: number;
+  take: number;
+} {
+  const closes = bars.map((b) => b.close);
+  const rs = rsi(closes, 14);
+  const maFast = sma(closes, 5);
+  const maTrend = sma(closes, 20);
+  const a = atr(bars, 14);
+
+  const i = bars.length - 1;
+  const r = rs[i];
+  const c = closes[i];
+  const prev = closes[i - 1] ?? c;
+
+  const reasons: string[] = [];
+  let score = 0;
+
+  if (r != null) {
+    if (r < 25) {
+      reasons.push(`超跌（RSI=${r.toFixed(1)}）`);
+      score += 45;
+    } else if (r < 30) {
+      reasons.push(`偏弱（RSI=${r.toFixed(1)}）`);
+      score += 30;
+    } else if (r < 35) {
+      reasons.push(`弱转稳（RSI=${r.toFixed(1)}）`);
+      score += 15;
+    }
+  }
+
+  if (maFast[i] != null && c > (maFast[i] as number)) {
+    reasons.push("反转确认（收盘站上短均线）");
+    score += 20;
+  }
+  if (c > prev) {
+    reasons.push("收盘高于昨收");
+    score += 10;
+  }
+
+  if (maTrend[i] != null && c < (maTrend[i] as number)) {
+    reasons.push("仍在20日线下（试错思路）");
+    score += 5;
+  } else if (maTrend[i] != null) {
+    reasons.push("回到20日线附近/之上（更像企稳）");
+    score += 10;
+  }
+
+  score = Math.min(100, score);
+  const atrNow = a[i] ?? 0;
+  const entry = c;
+  const stop = atrNow ? c - 1.2 * atrNow : c * 0.97;
+  const take = atrNow ? c + 2.0 * atrNow : c * 1.06;
+
+  let signal: PullbackSignal["signal"] = "none";
+  if (r != null && r < 30 && score >= 55) signal = "buy";
+  else if (r != null && r < 35 && score >= 35) signal = "watch";
+
+  return { signal, score, reason: reasons, entry, stop, take };
+}
+
+async function fetchAshareKlineBars(
+  code: string,
+  count = 140,
+): Promise<ScanBar[]> {
+  const raw = await fetchEastmoneyKline({ code, period: "daily", count });
+  return (raw || [])
+    .map((line) => String(line).split(","))
+    .filter((arr) => arr.length >= 6)
+    .map((arr) => {
+      const date = arr[0];
+      const open = Number(arr[1]);
+      const close = Number(arr[2]);
+      const high = Number(arr[3]);
+      const low = Number(arr[4]);
+      const volume = Number(arr[5]);
+      const amount = arr[6] != null ? Number(arr[6]) : undefined;
+      const ts = Date.parse(date + "T00:00:00+08:00");
+      return { ts, date, open, close, high, low, volume, amount };
+    })
+    .filter((b) => Number.isFinite(b.ts) && Number.isFinite(b.close));
+}
+
+async function mapLimitConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (x: T, idx: number) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = new Array(items.length) as any;
+  let cursor = 0;
+  const workers = new Array(Math.max(1, limit)).fill(0).map(async () => {
+    while (cursor < items.length) {
+      const idx = cursor++;
+      out[idx] = await fn(items[idx], idx);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+// 规则扫描：给前端/AI 提供更靠谱的候选集
+app.post("/api/a/scan", async (req, res) => {
+  try {
+    const { scope, watchlistCodes, marketLimit, topN } = req.body || {};
+
+    let codes: string[] = [];
+    let snapshot: any[] = [];
+
+    if (String(scope || "market") === "watchlist") {
+      codes = (Array.isArray(watchlistCodes) ? watchlistCodes : [])
+        .map((c: any) => toAshareCode(String(c)))
+        .filter(
+          (c: string) =>
+            c.startsWith("sh") || c.startsWith("sz") || c.startsWith("bj"),
+        );
+    } else {
+      const limit = Math.min(Math.max(Number(marketLimit) || 400, 50), 800);
+      snapshot = await fetchAshareSnapshot(limit);
+      // fetchAshareSnapshot 返回纯数字 code，这里转成带前缀 code
+      codes = snapshot
+        .map((x: any) => toAshareCode(String(x.code)))
+        .filter(Boolean);
+    }
+
+    codes = Array.from(new Set(codes)).slice(0, 900);
+    if (!codes.length) return res.json({ candidates: [], note: "empty" });
+
+    // 并发拉K线 + 计算信号
+    const concurrency = 8;
+    const results = await mapLimitConcurrency(
+      codes,
+      concurrency,
+      async (code) => {
+        try {
+          const bars = await fetchAshareKlineBars(code, 140);
+          if (bars.length < 60) return null;
+
+          const swing = analyzeSwingPullback(bars);
+          const rev = analyzeReversalRSI(bars);
+          const best =
+            swing.score >= rev.score
+              ? { ...swing, strategy: "swing_pullback" as const }
+              : { ...rev, strategy: "reversal_rsi" as const };
+
+          const last = bars[bars.length - 1];
+          const prev = bars[bars.length - 2] || last;
+          const pct = prev.close
+            ? ((last.close - prev.close) / prev.close) * 100
+            : undefined;
+
+          const name = (() => {
+            const digits = code.replace(/^(sh|sz|bj)/, "");
+            const hit = snapshot.find((x: any) => String(x.code) === digits);
+            return hit?.name;
+          })();
+
+          const amount = (() => {
+            const digits = code.replace(/^(sh|sz|bj)/, "");
+            const hit = snapshot.find((x: any) => String(x.code) === digits);
+            return hit?.amount;
+          })();
+
+          const sig: PullbackSignal = {
+            code,
+            name,
+            strategy: best.strategy,
+            signal: best.signal,
+            score: best.score,
+            reason: best.reason,
+            entry: best.entry,
+            stop: best.stop,
+            take: best.take,
+            last: { close: last.close, percent: pct, amount },
+          };
+
+          return sig;
+        } catch {
+          return null;
+        }
+      },
+    );
+
+    const cleaned = results.filter(Boolean) as PullbackSignal[];
+    cleaned.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    res.json({
+      scope: String(scope || "market"),
+      candidates: cleaned.slice(
+        0,
+        Math.min(Math.max(Number(topN) || 80, 10), 200),
+      ),
+    });
+  } catch (e: any) {
+    const message = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: message });
+  }
+});
+
+// AI 整理：把“规则扫描”结果分成低吸/埋伏/回避，并给更像交易计划的触发条件
+app.post("/api/ai/a/pullback", async (req, res) => {
+  try {
+    const { scope, watchlistCodes, marketLimit, topN, horizon, riskProfile } =
+      req.body || {};
+
+    const scanResp = await (
+      await axios.post(`http://localhost:${PORT}/api/a/scan`, {
+        scope: scope || "market",
+        watchlistCodes: watchlistCodes || [],
+        marketLimit: marketLimit || 400,
+        topN: topN || 120,
+      })
+    ).data;
+
+    const candidates = Array.isArray(scanResp?.candidates)
+      ? scanResp.candidates
+      : [];
+
+    const [sectors, news] = await Promise.all([
+      fetchHotSectors(12),
+      fetchNewsHeadlines(12),
+    ]);
+
+    const sectorCandidates = [
+      ...sectors.industry.map((s) => ({ ...s, kind: "industry" })),
+      ...sectors.concept.map((s) => ({ ...s, kind: "concept" })),
+    ].slice(0, 30);
+
+    const system: ChatMessage = {
+      role: "system",
+      content:
+        "你是A股‘波段低吸/埋伏’交易助手。你只能基于传入的规则扫描结果（score/signal/reason/entry/stop/take/涨跌幅/成交额等）以及板块字段和新闻标题，给出更可执行的观察与交易计划。不要编造财务、公告、新闻细节。输出必须是严格 JSON（纯 JSON 字符串），不要输出 Markdown/```。必须包含风险提示：不构成投资建议。",
+    };
+
+    const user: ChatMessage = {
+      role: "user",
+      content: JSON.stringify(
+        {
+          task: "pullback_scan_ai",
+          horizon: horizon || "swing_1_4_weeks",
+          riskProfile: riskProfile || "medium",
+          sectorCandidates,
+          newsHeadlines: news,
+          candidates: candidates.slice(0, 120),
+          outputSchema: {
+            overview: {
+              style: "swing_pullback_and_ambush",
+              marketNotes: ["盘面/风格注意点"],
+              riskNotes: ["风险提示"],
+            },
+            lowAbsorb: [
+              {
+                code: "",
+                name: "",
+                rank: 1,
+                why: ["为何适合回踩低吸"],
+                trigger: ["触发条件（更像规则）"],
+                plan: { entry: "", invalidation: "", takeProfit: "" },
+                riskNotes: [""],
+              },
+            ],
+            ambush: [
+              {
+                code: "",
+                name: "",
+                rank: 1,
+                why: ["为何适合埋伏观察"],
+                trigger: ["触发条件"],
+                invalidation: "无效条件",
+                riskNotes: [""],
+              },
+            ],
+            avoid: [{ code: "", name: "", why: "" }],
+            disclaimer: "固定写：不构成投资建议",
+          },
+        },
+        null,
+        2,
+      ),
+    };
+
+    const content = await callLLM([system, user]);
+    res.json(safeJsonParse(content));
+  } catch (e: any) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("/api/ai/a/pullback", message);
+    res.status(500).json({ error: message });
+  }
+});
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Stock API proxy: http://localhost:${PORT}`);
 });
