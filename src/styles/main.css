@@ -79,15 +79,119 @@ button {
   }
 }
 
+/* H5 弹框：底部抽屉式，全宽、安全区、易触控 */
+body.h5 .el-overlay-dialog {
+  padding: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
 body.h5 .el-overlay-dialog .el-dialog {
-  width: 95% !important;
+  width: 100% !important;
   max-width: none;
-  margin: 1rem auto;
-  max-height: calc(100vh - 2rem);
-  overflow: auto;
+  margin: 0 !important;
+  max-height: 92vh;
+  border-radius: 16px 16px 0 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.35);
+}
+
+body.h5 .el-overlay-dialog .el-dialog__header {
+  padding: 14px 16px 12px;
+  padding-top: max(14px, env(safe-area-inset-top));
+  margin-right: 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
+body.h5 .el-overlay-dialog .el-dialog__title {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+body.h5 .el-overlay-dialog .el-dialog__headerbtn {
+  width: 40px;
+  height: 40px;
+  top: 50%;
+  transform: translateY(-50%);
+  right: 8px;
+}
+
+body.h5 .el-overlay-dialog .el-dialog__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
+  max-height: none;
+}
+
+body.h5 .el-overlay-dialog .el-dialog__footer {
+  padding: 12px 16px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+body.h5 .el-overlay-dialog .el-dialog__footer .el-button {
+  min-height: 40px;
+  padding: 0 18px;
 }
 
 body.h5 .el-button {
-  min-height: 36px;
-  min-width: 36px;
+  min-height: 40px;
+  min-width: 40px;
+  padding: 0 14px;
+}
+
+/* H5 弹框内表单/控件更易触控 */
+body.h5 .el-overlay-dialog .el-form-item {
+  margin-bottom: 16px;
+}
+
+body.h5 .el-overlay-dialog .el-input,
+body.h5 .el-overlay-dialog .el-textarea {
+  --el-input-font-size: 16px;
+}
+
+body.h5 .el-overlay-dialog .el-radio-group .el-radio-button__inner,
+body.h5 .el-overlay-dialog .el-button {
+  min-height: 38px;
+}
+
+/* H5 弹框内 AI 内容区：标签列窄一点，历史项易点 */
+body.h5 .el-overlay-dialog .ai-row {
+  grid-template-columns: 72px 1fr;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+}
+
+body.h5 .el-overlay-dialog .ai-history-item {
+  padding: 12px 14px;
+  min-height: 44px;
+}
+
+body.h5 .el-overlay-dialog .ai-dialog .el-form--inline .el-form-item {
+  margin-right: 0;
+  margin-bottom: 10px;
+}
+
+body.h5 .el-overlay-dialog .el-form--inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+body.h5 .el-overlay-dialog .el-divider {
+  margin: 12px 0;
 }

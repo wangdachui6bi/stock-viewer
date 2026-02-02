@@ -1560,7 +1560,6 @@
                   max-width: 100%;
                   overflow: hidden;
                   text-overflow: ellipsis;
-                  white-space: nowrap;
                 "
               >
                 {{ (item.params.notes || "").slice(0, 60)
