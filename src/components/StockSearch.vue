@@ -121,62 +121,81 @@ function onBlur() {
 .search-prefix-icon {
   color: var(--text-muted);
   font-size: 1.1rem;
+  transition: color var(--transition-fast);
 }
 .search-box :deep(.el-input__wrapper) {
   border-radius: var(--radius);
   transition:
-    box-shadow 0.2s ease,
-    border-color 0.2s ease;
+    box-shadow var(--transition-base),
+    border-color var(--transition-base),
+    background-color var(--transition-base);
+  background: rgba(255, 255, 255, 0.03);
 }
-.search-box :deep(.el-input__wrapper:hover),
+.search-box :deep(.el-input__wrapper:hover) {
+  background: rgba(255, 255, 255, 0.05);
+}
 .search-box :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 1px var(--accent);
+  box-shadow:
+    0 0 0 2px var(--accent-glow, rgba(99, 102, 241, 0.15)),
+    0 0 0 1px var(--accent, #6366f1);
+  background: rgba(255, 255, 255, 0.04);
+}
+.search-box :deep(.el-input__wrapper.is-focus) .search-prefix-icon {
+  color: var(--accent-light, #818cf8);
 }
 .suggestions {
   position: absolute;
   top: 100%;
   left: 0;
   right: 0;
-  margin-top: 4px;
+  margin-top: 6px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-light, #2f2f3d);
   border-radius: var(--radius);
   list-style: none;
-  padding: 0.25rem;
-  max-height: 280px;
+  padding: 0.35rem;
+  max-height: 320px;
   overflow-y: auto;
   z-index: 10;
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.4));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 .suggestion-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.5rem 0.75rem;
+  padding: 0.55rem 0.85rem;
   cursor: pointer;
-  border-radius: 6px;
-  transition: background-color 0.15s ease;
+  border-radius: var(--radius-sm, 8px);
+  transition: all var(--transition-fast, 0.15s);
 }
 .suggestion-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(99, 102, 241, 0.08);
 }
 .suggestion-label {
   font-weight: 500;
 }
 .suggestion-market {
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
 }
 .suggestions.empty {
-  padding: 0.75rem;
+  padding: 1rem;
   color: var(--text-muted);
+  text-align: center;
 }
 .dropdown-enter-active,
 .dropdown-leave-active {
-  transition: opacity 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .dropdown-enter-from,
 .dropdown-leave-to {
   opacity: 0;
+  transform: translateY(-4px);
 }
 
 @media (max-width: 768px) {

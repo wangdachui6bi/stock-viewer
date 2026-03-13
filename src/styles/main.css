@@ -1,15 +1,35 @@
 :root {
-  --bg: #0f0f12;
-  --bg-card: #18181c;
-  --border: #2a2a2e;
-  --text: #e4e4e7;
-  --text-muted: #71717a;
+  --bg: #0a0a0f;
+  --bg-card: #13131a;
+  --bg-card-hover: #1a1a24;
+  --bg-elevated: #1e1e2a;
+  --border: #252530;
+  --border-light: #2f2f3d;
+  --text: #e8e8ed;
+  --text-secondary: #a0a0b0;
+  --text-muted: #6b6b7b;
   --up: #22c55e;
   --down: #ef4444;
-  --accent: #3b82f6;
-  --radius: 10px;
-  --font-sans: "DM Sans", "SF Pro Text", -apple-system, BlinkMacSystemFont,
-    sans-serif;
+  --accent: #6366f1;
+  --accent-light: #818cf8;
+  --accent-glow: rgba(99, 102, 241, 0.15);
+  --accent-secondary: #3b82f6;
+  --warning: #f59e0b;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.08);
+  --font-sans: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  --glass-bg: rgba(19, 19, 26, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.06);
 }
 
 * {
@@ -28,12 +48,17 @@ body {
   font-family: var(--font-sans);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.08), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(56, 189, 248, 0.04), transparent);
+  background-attachment: fixed;
 }
 
 #app {
   min-height: 100vh;
   padding: 1.5rem 2rem;
-  max-width: 1400px;
+  max-width: 1440px;
   margin: 0 auto;
 }
 
@@ -50,7 +75,7 @@ button {
   color: var(--down);
 }
 
-/* Element Plus 与深色背景统一 */
+/* Element Plus dark theme overrides */
 .dark {
   --el-bg-color: var(--bg-card);
   --el-bg-color-page: var(--bg);
@@ -62,16 +87,67 @@ button {
   --el-fill-color: var(--border);
 }
 
-/* 通用过渡 */
+/* Smooth transitions */
 .el-button,
 .el-input__wrapper,
 .el-table__row,
 .suggestion-item {
-  transition: background-color 0.2s ease, color 0.2s ease,
-    border-color 0.2s ease, opacity 0.2s ease;
+  transition: background-color var(--transition-fast), color var(--transition-fast),
+    border-color var(--transition-fast), opacity var(--transition-fast),
+    box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 
-/* H5 适配：小屏布局与触控 */
+/* Button hover lift */
+.el-button:not(.is-link):not(.is-text):hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.el-button:not(.is-link):not(.is-text):active {
+  transform: translateY(0);
+}
+
+/* Dialog backdrop blur */
+.el-overlay {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.el-dialog {
+  border-radius: var(--radius-lg) !important;
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* Tabs styling */
+.el-tabs__item.is-active {
+  color: var(--accent-light) !important;
+}
+
+.el-tabs__active-bar {
+  background-color: var(--accent) !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* H5 responsive */
 @media (max-width: 768px) {
   #app {
     padding: 0.75rem 1rem;
@@ -79,7 +155,7 @@ button {
   }
 }
 
-/* H5 弹框：底部抽屉式，全宽、安全区、易触控 */
+/* H5 dialog: bottom sheet style */
 body.h5 .el-overlay-dialog {
   padding: 0;
   display: flex;
@@ -92,11 +168,11 @@ body.h5 .el-overlay-dialog .el-dialog {
   max-width: none;
   margin: 0 !important;
   max-height: 92vh;
-  border-radius: 16px 16px 0 0;
+  border-radius: 16px 16px 0 0 !important;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.35) !important;
 }
 
 body.h5 .el-overlay-dialog .el-dialog__header {
@@ -154,7 +230,6 @@ body.h5 .el-button {
   padding: 0 14px;
 }
 
-/* H5 弹框内表单/控件更易触控 */
 body.h5 .el-overlay-dialog .el-form-item {
   margin-bottom: 16px;
 }
@@ -169,7 +244,6 @@ body.h5 .el-overlay-dialog .el-button {
   min-height: 38px;
 }
 
-/* H5 弹框内 AI 内容区：标签列窄一点，历史项易点 */
 body.h5 .el-overlay-dialog .ai-row {
   grid-template-columns: 72px 1fr;
   gap: 0.5rem;
@@ -194,4 +268,26 @@ body.h5 .el-overlay-dialog .el-form--inline {
 
 body.h5 .el-overlay-dialog .el-divider {
   margin: 12px 0;
+}
+
+/* Fade enter animation for sections */
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-slide-up {
+  animation: fadeSlideUp var(--transition-slow) ease-out;
+}
+
+/* Number mono font */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }

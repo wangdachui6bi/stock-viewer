@@ -47,7 +47,9 @@
           :sort-method="sortByPercent"
         >
           <template #default="{ row }">
-            <span :class="percentClassFrom(row)">{{ formatPercentText(row) }}</span>
+            <span :class="percentClassFrom(row)">{{
+              formatPercentText(row)
+            }}</span>
           </template>
         </el-table-column>
         <el-table-column
@@ -345,15 +347,26 @@ const sortByEarningPercent = (a: StockItem, b: StockItem) =>
   --el-table-bg-color: var(--bg-card);
   --el-table-tr-bg-color: var(--bg-card);
   --el-table-header-bg-color: var(--bg-card);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.04);
+  --el-table-row-hover-bg-color: rgba(99, 102, 241, 0.04);
   --el-table-border-color: var(--border);
   --el-table-text-color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.stock-table :deep(.el-table__header th) {
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-muted) !important;
 }
 .stock-table :deep(.el-table__row.is-sell-out) {
-  opacity: 0.7;
+  opacity: 0.55;
 }
 .stock-table :deep(.el-table__row) {
-  transition: background-color 0.2s ease;
+  transition: all var(--transition-fast, 0.15s);
+}
+.stock-table :deep(.el-table__row:hover) {
+  background: rgba(99, 102, 241, 0.04) !important;
 }
 .stock-table :deep(.up) {
   color: var(--up);
@@ -367,6 +380,8 @@ const sortByEarningPercent = (a: StockItem, b: StockItem) =>
   color: var(--text-muted);
 }
 .table-wrap :deep(.el-loading-mask) {
-  background-color: rgba(15, 15, 18, 0.7);
+  background-color: rgba(10, 10, 15, 0.75);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 </style>

@@ -8,6 +8,7 @@
     "dev:client": "vite",
     "dev:server": "tsx server/index.ts",
     "build": "vue-tsc -b && vite build",
+    "start": "NODE_ENV=production node --import tsx server/index.ts",
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest",

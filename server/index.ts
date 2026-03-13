@@ -1987,6 +1987,18 @@ app.post("/api/ai/a/pullback", async (req, res) => {
     res.status(500).json({ error: message });
   }
 });
+// Production: serve the built frontend
+const isProduction = process.env.NODE_ENV === "production";
+if (isProduction) {
+  const distPath = path.resolve(rootDir, "dist");
+  app.use(express.static(distPath, { maxAge: "7d" }));
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(distPath, "index.html"));
+  });
+}
+
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Stock API proxy: http://localhost:${PORT}`);
+  console.log(
+    `Stock API ${isProduction ? "(production)" : "(dev)"}: http://localhost:${PORT}`,
+  );
 });
