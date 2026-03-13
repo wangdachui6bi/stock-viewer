@@ -2,16 +2,17 @@
 set -euo pipefail
 
 # ========================================
-# Manual deploy script for vue-stock-viewer
-# Usage: ./deploy.sh [user@host] [deploy-path]
+# 手动部署 stock-viewer 到 /srv/stock-viewer
+# Usage: ./deploy.sh [ssh-host]
+#   ssh-host: SSH config 里的 Host 别名或 user@ip（默认 niuniu）
 # ========================================
 
-SERVER="${1:?Usage: ./deploy.sh user@host [deploy-path]}"
-DEPLOY_PATH="${2:-/opt/vue-stock-viewer}"
+SERVER="${1:-niuniu}"
+DEPLOY_PATH="/srv/stock-viewer"
 
-echo "==> Deploying to $SERVER:$DEPLOY_PATH"
+echo "==> 同步文件到 $SERVER:$DEPLOY_PATH"
+ssh "$SERVER" "mkdir -p $DEPLOY_PATH"
 
-echo "==> Syncing project files..."
 rsync -avz --delete \
   --exclude node_modules \
   --exclude dist \
@@ -20,7 +21,7 @@ rsync -avz --delete \
   --exclude '*.log' \
   ./ "$SERVER:$DEPLOY_PATH/"
 
-echo "==> Building and starting on server..."
-ssh "$SERVER" "cd $DEPLOY_PATH && docker compose build && docker compose up -d --remove-orphans && docker image prune -f"
+echo "==> 构建并启动"
+ssh "$SERVER" "cd $DEPLOY_PATH && docker compose up -d --build --remove-orphans && docker image prune -f"
 
-echo "==> Done! App is running at http://$SERVER"
+echo "==> 完成！"

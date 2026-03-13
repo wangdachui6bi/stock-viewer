@@ -1,6 +1,7 @@
 services:
-  app:
+  stock-viewer:
     build: .
+    container_name: stock-viewer
     restart: unless-stopped
     ports:
       - "3001:3001"
@@ -8,15 +9,20 @@ services:
       - .env.local
     environment:
       - NODE_ENV=production
+    # ---------------------------------------------------
+    # 后续接入 Traefik + 域名时，取消下面注释，
+    # 把 YOUR_TRAEFIK_NETWORK 换成实际网络名，把域名改对
+    # 然后删掉上面的 ports 映射即可
+    # ---------------------------------------------------
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.stock-viewer.rule=Host(`stock.yourdomain.com`)"
+    #   - "traefik.http.routers.stock-viewer.entrypoints=websecure"
+    #   - "traefik.http.routers.stock-viewer.tls.certresolver=letsencrypt"
+    #   - "traefik.http.services.stock-viewer.loadbalancer.server.port=3001"
+    # networks:
+    #   - YOUR_TRAEFIK_NETWORK
 
-  nginx:
-    image: nginx:alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./certs:/etc/nginx/certs:ro
-    depends_on:
-      - app
+# networks:
+#   YOUR_TRAEFIK_NETWORK:
+#     external: true

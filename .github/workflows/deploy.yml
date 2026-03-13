@@ -7,6 +7,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  DEPLOY_PATH: /srv/stock-viewer
 
 jobs:
   build-and-deploy:
@@ -42,7 +43,12 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd ${{ secrets.DEPLOY_PATH || '/opt/vue-stock-viewer' }}
-            docker compose pull app
+            cd ${{ env.DEPLOY_PATH }}
+
+            # 登录 GHCR 拉取镜像
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # 更新镜像并重启
+            docker compose pull stock-viewer
             docker compose up -d --remove-orphans
             docker image prune -f
