@@ -42,6 +42,33 @@ export async function fetchNews(limit = 20): Promise<NewsItem[]> {
   return Array.isArray(data) ? data : [];
 }
 
+export interface StreakScanItem {
+  code: string;
+  name: string;
+  price: number;
+  percent: number;
+  streak: number;
+}
+
+export interface StreakScanResponse {
+  cached: boolean;
+  total: number;
+  results: StreakScanItem[];
+  scanning?: boolean;
+  message?: string;
+}
+
+export async function fetchStreakScan(
+  direction: "down" | "up",
+  minDays: number,
+): Promise<StreakScanResponse> {
+  const { data } = await api.get<StreakScanResponse>("/streak-scan", {
+    params: { direction, minDays },
+    timeout: 300000,
+  });
+  return data;
+}
+
 /** 将搜索项转为自选代码：A股/港股 sh/sz/bj + code，美股 usr_xxx（与 leek-fund 一致） */
 export function searchItemToCode(item: SearchItem): string {
   const m = (item.market || "").toLowerCase();

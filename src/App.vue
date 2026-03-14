@@ -109,16 +109,13 @@
                   v-for="idx in marketIndices"
                   :key="idx.code"
                   class="index-card"
-                  :class="{
-                    up: Number(idx.percent) > 0,
-                    down: Number(idx.percent) < 0,
-                  }"
+                  :class="indexColorClass(idx)"
                 >
                   <span class="index-name">{{ idx.name }}</span>
                   <span class="index-price">{{ idx.price }}</span>
-                  <span class="index-change">
-                    {{ Number(idx.percent) > 0 ? "+" : "" }}{{ idx.percent }}%
-                  </span>
+                  <span class="index-change">{{
+                    formatIndexPercent(idx)
+                  }}</span>
                 </div>
               </div>
               <div class="summary-grid">
@@ -154,9 +151,9 @@
                     class="summary-value"
                     :class="
                       portfolioSummary.totalEarnings > 0
-                        ? 'down'
+                        ? 'up'
                         : portfolioSummary.totalEarnings < 0
-                          ? 'up'
+                          ? 'down'
                           : ''
                     "
                   >
@@ -180,9 +177,9 @@
                     class="summary-value"
                     :class="
                       portfolioSummary.todayEarnings > 0
-                        ? 'down'
+                        ? 'up'
                         : portfolioSummary.todayEarnings < 0
-                          ? 'up'
+                          ? 'down'
                           : ''
                     "
                   >
@@ -290,6 +287,7 @@
             </span>
           </div>
           <div class="actions">
+            <el-button plain @click="openStreakScan"> 连涨跌扫描 </el-button>
             <el-dropdown trigger="click" @command="handleAiCommand">
               <el-button type="primary" plain>
                 AI 工具
@@ -360,6 +358,7 @@
         <StockTable
           :list="displayList"
           :loading="loading"
+          :compact="isH5"
           @remove="removeCode"
           @set-holding="openHoldingModal"
           @ai-analyze="openAiAnalyze"
@@ -439,6 +438,121 @@
         </div>
       </div>
     </el-dialog>
+    <!-- 连涨跌扫描 -->
+    <el-dialog
+      v-model="streakScanModal"
+      title="全 A 股连涨跌扫描"
+      width="720px"
+      destroy-on-close
+      class="ai-dialog"
+    >
+      <div class="streak-scan-controls">
+        <el-radio-group v-model="streakScanDirection" size="small">
+          <el-radio-button value="down">连跌</el-radio-button>
+          <el-radio-button value="up">连涨</el-radio-button>
+        </el-radio-group>
+        <div class="streak-scan-days">
+          <span class="muted">≥</span>
+          <el-input-number
+            v-model="streakScanDays"
+            :min="2"
+            :max="30"
+            size="small"
+            controls-position="right"
+            style="width: 90px"
+          />
+          <span class="muted">天</span>
+        </div>
+        <el-button
+          type="primary"
+          size="small"
+          :loading="streakScanLoading"
+          @click="runStreakScan"
+        >
+          {{ streakScanLoading ? "扫描中…" : "开始扫描" }}
+        </el-button>
+        <span v-if="streakScanTotal" class="muted" style="font-size: 0.8rem">
+          {{ streakScanCached ? "(缓存)" : "" }} 扫描 {{ streakScanTotal }} 只 ·
+          命中 {{ streakScanResults.length }} 只
+        </span>
+      </div>
+      <el-skeleton
+        v-if="streakScanLoading && !streakScanResults.length"
+        :rows="8"
+        animated
+      />
+      <template v-else>
+        <el-empty
+          v-if="!streakScanResults.length"
+          :description="
+            streakScanTotal ? '无符合条件的股票' : '点击「开始扫描」搜索全 A 股'
+          "
+        />
+        <el-table
+          v-else
+          :data="streakScanResults"
+          size="small"
+          stripe
+          max-height="480"
+          class="streak-scan-table"
+        >
+          <el-table-column label="名称" min-width="100" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span>{{ row.name }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="代码" width="100">
+            <template #default="{ row }">{{ row.code }}</template>
+          </el-table-column>
+          <el-table-column label="最新价" width="85" align="right">
+            <template #default="{ row }">{{ row.price }}</template>
+          </el-table-column>
+          <el-table-column label="今日涨跌" width="90" align="right">
+            <template #default="{ row }">
+              <span
+                :class="row.percent > 0 ? 'up' : row.percent < 0 ? 'down' : ''"
+              >
+                {{ row.percent > 0 ? "+" : "" }}{{ row.percent?.toFixed(2) }}%
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="连续天数"
+            width="100"
+            align="center"
+            sortable
+            :sort-method="
+              (a: StreakScanItem, b: StreakScanItem) =>
+                Math.abs(a.streak) - Math.abs(b.streak)
+            "
+          >
+            <template #default="{ row }">
+              <span class="streak-tag" :class="row.streak > 0 ? 'up' : 'down'">
+                {{ row.streak > 0 ? "涨" : "跌" }} {{ Math.abs(row.streak) }} 天
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="80" align="center">
+            <template #default="{ row }">
+              <el-button
+                link
+                size="small"
+                type="primary"
+                :disabled="allCodes.includes(row.code.toLowerCase())"
+                @click="addCodeFromScan(row.code)"
+              >
+                {{
+                  allCodes.includes(row.code.toLowerCase())
+                    ? "已添加"
+                    : "+ 自选"
+                }}
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+    </el-dialog>
+
     <!-- AI 分析 -->
     <el-dialog
       v-model="aiAnalyzeModal"
@@ -1056,7 +1170,13 @@ import { ArrowDown } from "@element-plus/icons-vue";
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 import StockSearch from "./components/StockSearch.vue";
 import StockTable from "./components/StockTable.vue";
-import { fetchStockList, searchStock, searchItemToCode } from "./api/stock";
+import {
+  fetchStockList,
+  searchStock,
+  searchItemToCode,
+  fetchStreakScan,
+} from "./api/stock";
+import type { StreakScanItem } from "./api/stock";
 import {
   aiAnalyzeStock as aiAnalyzeStockApi,
   aiSectorNow,
@@ -1147,6 +1267,7 @@ function checkH5() {
   document.body.classList.toggle("h5", h5);
 }
 const holdingFilter = ref<"all" | "holding" | "not_holding">("all");
+
 const holdingModal = ref(false);
 const holdingStock = ref<StockItem | null>(null);
 const holdingForm = ref({
@@ -1161,6 +1282,15 @@ let realtimeTimer: ReturnType<typeof setInterval> | null = null;
 const lastUpdateTime = ref<number | null>(null);
 
 // AI
+// 连涨跌扫描
+const streakScanModal = ref(false);
+const streakScanLoading = ref(false);
+const streakScanDirection = ref<"down" | "up">("down");
+const streakScanDays = ref(3);
+const streakScanResults = ref<StreakScanItem[]>([]);
+const streakScanTotal = ref(0);
+const streakScanCached = ref(false);
+
 const aiAnalyzeModal = ref(false);
 const aiAnalyzeLoading = ref(false);
 const aiAnalyzeTarget = ref<StockItem | null>(null);
@@ -1558,6 +1688,21 @@ function cycleSort() {
   else sortType.value = 0;
 }
 
+function indexColorClass(idx: StockItem) {
+  const ud = parseFloat(String(idx.updown ?? "0"));
+  if (ud > 0) return "up";
+  if (ud < 0) return "down";
+  return "";
+}
+
+function formatIndexPercent(idx: StockItem) {
+  const raw = String(idx.percent ?? "").replace(/[%+\-]/g, "");
+  const pct = parseFloat(raw) || 0;
+  const ud = parseFloat(String(idx.updown ?? "0"));
+  const sign = ud > 0 ? "+" : ud < 0 ? "-" : "";
+  return `${sign}${pct.toFixed(2)}%`;
+}
+
 function formatMoney(v: number) {
   return new Intl.NumberFormat("zh-CN", {
     minimumFractionDigits: 2,
@@ -1878,6 +2023,39 @@ async function runAiAnalyze() {
 }
 
 // (aiAnalyzeStockApi 已在 import 中 alias)
+
+function openStreakScan() {
+  streakScanModal.value = true;
+  if (!streakScanResults.value.length) runStreakScan();
+}
+
+async function runStreakScan() {
+  streakScanLoading.value = true;
+  try {
+    const resp = await fetchStreakScan(
+      streakScanDirection.value,
+      streakScanDays.value,
+    );
+    if ((resp as any).scanning) {
+      ElMessage.info("扫描进行中，请稍后再试");
+      return;
+    }
+    streakScanResults.value = resp.results || [];
+    streakScanTotal.value = resp.total || 0;
+    streakScanCached.value = resp.cached ?? false;
+  } catch {
+    ElMessage.error("连涨跌扫描失败，请稍后重试");
+  } finally {
+    streakScanLoading.value = false;
+  }
+}
+
+function addCodeFromScan(code: string) {
+  const c = code.toLowerCase();
+  if (allCodes.value.some((x) => x.toLowerCase() === c)) return;
+  addCode(c);
+  ElMessage.success(`已加入自选: ${c}`);
+}
 
 function handleAiCommand(command: string) {
   if (command === "sector") openAiSectorModal();
@@ -2327,31 +2505,81 @@ onUnmounted(() => {
 .app.h5 {
   padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
 }
+.app.h5 .header {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+}
 .app.h5 .header-inner {
-  gap: 0.5rem 1rem;
+  gap: 0.4rem 0.75rem;
+}
+.app.h5 .brand-icon {
+  display: none;
 }
 .app.h5 .title {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
+}
+.app.h5 .subtitle {
+  display: none;
+}
+.app.h5 .header-status {
+  order: 2;
+  margin-left: auto;
 }
 .app.h5 .quick-links {
-  width: 100%;
-  margin-left: 0;
-  margin-top: 0.25rem;
+  display: none;
 }
 .app.h5 .section-head {
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 .app.h5 .actions {
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.35rem;
+  width: 100%;
 }
 .app.h5 .watchlist-section,
 .app.h5 .tools-section {
-  padding: 1rem;
+  padding: 0.85rem;
+  border-radius: var(--radius-sm);
+}
+.app.h5 .tools-section {
+  margin-bottom: 0.75rem;
 }
 .app.h5 .group-select {
-  min-width: 90px;
+  min-width: 80px;
+}
+.app.h5 .indices-bar {
+  gap: 0.5rem;
+}
+.app.h5 .index-card {
+  min-width: 0;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.85rem;
+}
+.app.h5 .index-card .index-name {
+  font-size: 0.7rem;
+}
+.app.h5 .index-card .index-price {
+  font-size: 0.85rem;
+}
+.app.h5 .summary-grid {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+.app.h5 .summary-card {
+  padding: 0.65rem 0.75rem;
+}
+.app.h5 .summary-label {
+  font-size: 0.7rem;
+}
+.app.h5 .summary-value {
+  font-size: 1rem;
+}
+.app.h5 .section-title-row h2 {
+  font-size: 0.95rem;
+}
+.app.h5 .tools-tabs :deep(.el-tabs__header) {
+  margin-bottom: 0.5rem;
 }
 
 /* ===== Header ===== */
@@ -2566,6 +2794,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 /* ===== Summary Cards ===== */
@@ -2607,11 +2836,11 @@ onUnmounted(() => {
 }
 .index-card.up .index-price,
 .index-card.up .index-change {
-  color: var(--down);
+  color: var(--up);
 }
 .index-card.down .index-price,
 .index-card.down .index-change {
-  color: var(--up);
+  color: var(--down);
 }
 .summary-grid {
   display: grid;
@@ -2892,5 +3121,41 @@ onUnmounted(() => {
 }
 .market-mode-tabs {
   margin-bottom: 1rem;
+}
+.streak-scan-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.streak-scan-days {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.streak-tag {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  line-height: 1.5;
+}
+.streak-tag.up {
+  color: var(--up);
+  background: rgba(239, 68, 68, 0.12);
+}
+.streak-tag.down {
+  color: var(--down);
+  background: rgba(34, 197, 94, 0.12);
+}
+.streak-scan-table .up {
+  color: var(--up);
+  font-weight: 600;
+}
+.streak-scan-table .down {
+  color: var(--down);
+  font-weight: 600;
 }
 </style>

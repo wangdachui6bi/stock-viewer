@@ -930,6 +930,172 @@ app.get("/api/kline", async (req, res) => {
   }
 });
 
+// 全 A 股连涨/连跌扫描（带服务端缓存）
+let streakScanCache: {
+  ts: number;
+  data: {
+    code: string;
+    name: string;
+    price: number;
+    percent: number;
+    streak: number;
+  }[];
+} | null = null;
+const STREAK_CACHE_TTL = 30 * 60 * 1000;
+let streakScanRunning = false;
+
+function codeToFullCode(rawCode: string): string {
+  const c = rawCode.toLowerCase();
+  if (c.startsWith("6") || c.startsWith("5")) return `sh${c}`;
+  if (c.startsWith("0") || c.startsWith("3") || c.startsWith("1"))
+    return `sz${c}`;
+  if (c.startsWith("8") || c.startsWith("4")) return `bj${c}`;
+  return `sh${c}`;
+}
+
+function calcStreak(klineRaw: string[]): number {
+  const bars = klineRaw
+    .map((line) => String(line).split(","))
+    .filter((arr) => arr.length >= 3)
+    .map((arr) => Number(arr[2]))
+    .filter((v) => Number.isFinite(v));
+  if (bars.length < 2) return 0;
+  let streak = 0;
+  for (let j = bars.length - 1; j >= 1; j--) {
+    const diff = bars[j] - bars[j - 1];
+    if (streak === 0) {
+      if (diff > 0) streak = 1;
+      else if (diff < 0) streak = -1;
+      else break;
+    } else if (streak > 0 && diff > 0) {
+      streak++;
+    } else if (streak < 0 && diff < 0) {
+      streak--;
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
+app.get("/api/streak-scan", async (req, res) => {
+  const direction = String(req.query.direction || "down");
+  const minDays = Math.max(2, Math.min(Number(req.query.minDays) || 3, 30));
+
+  if (streakScanCache && Date.now() - streakScanCache.ts < STREAK_CACHE_TTL) {
+    const filtered = streakScanCache.data.filter((r) =>
+      direction === "down" ? r.streak <= -minDays : r.streak >= minDays,
+    );
+    filtered.sort((a, b) =>
+      direction === "down" ? a.streak - b.streak : b.streak - a.streak,
+    );
+    return res.json({
+      cached: true,
+      total: streakScanCache.data.length,
+      results: filtered,
+    });
+  }
+
+  if (streakScanRunning) {
+    return res
+      .status(202)
+      .json({ scanning: true, message: "扫描进行中，请稍后重试" });
+  }
+
+  streakScanRunning = true;
+  const startTs = Date.now();
+  console.log("[streak-scan] 开始全 A 股扫描...");
+
+  try {
+    const pages = 5;
+    const perPage = 500;
+    const allStocks: {
+      code: string;
+      name: string;
+      price: number;
+      percent: number;
+    }[] = [];
+    for (let p = 1; p <= pages; p++) {
+      const diff = await fetchEastmoneyClist({
+        pn: p,
+        pz: perPage,
+        po: 1,
+        np: 1,
+        fltt: 2,
+        invt: 2,
+        fid: "f6",
+        fs: mapAshareMarketFs(),
+        fields: "f12,f14,f2,f3",
+      });
+      for (const x of diff) {
+        const code = String(x.f12 || "").toLowerCase();
+        const name = String(x.f14 || "");
+        if (!code || !name) continue;
+        allStocks.push({ code, name, price: x.f2, percent: x.f3 });
+      }
+      if (diff.length < perPage) break;
+    }
+    console.log(
+      `[streak-scan] 获取 ${allStocks.length} 只 A 股，开始拉取 K 线...`,
+    );
+
+    const results: typeof streakScanCache extends null
+      ? never
+      : NonNullable<typeof streakScanCache>["data"] = [];
+    const concurrency = 8;
+    for (let i = 0; i < allStocks.length; i += concurrency) {
+      const batch = allStocks.slice(i, i + concurrency);
+      const promises = batch.map(async (stock) => {
+        const fullCode = codeToFullCode(stock.code);
+        try {
+          const raw = await fetchEastmoneyKline({
+            code: fullCode,
+            period: "daily",
+            count: 15,
+          });
+          const streak = calcStreak(raw);
+          return {
+            code: fullCode,
+            name: stock.name,
+            price: stock.price,
+            percent: stock.percent,
+            streak,
+          };
+        } catch {
+          return {
+            code: fullCode,
+            name: stock.name,
+            price: stock.price,
+            percent: stock.percent,
+            streak: 0,
+          };
+        }
+      });
+      results.push(...(await Promise.all(promises)));
+    }
+
+    streakScanCache = { ts: Date.now(), data: results };
+    const elapsed = ((Date.now() - startTs) / 1000).toFixed(1);
+    console.log(
+      `[streak-scan] 扫描完成，${results.length} 只，耗时 ${elapsed}s`,
+    );
+
+    const filtered = results.filter((r) =>
+      direction === "down" ? r.streak <= -minDays : r.streak >= minDays,
+    );
+    filtered.sort((a, b) =>
+      direction === "down" ? a.streak - b.streak : b.streak - a.streak,
+    );
+    res.json({ cached: false, total: results.length, results: filtered });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[streak-scan] 扫描失败:", message);
+    res.status(500).json({ error: message });
+  } finally {
+    streakScanRunning = false;
+  }
+});
+
 // 资讯：新浪财经 RSS
 app.get("/api/news", async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 20, 50);
