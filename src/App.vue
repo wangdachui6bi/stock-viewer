@@ -104,6 +104,23 @@
         <div v-show="!toolsCollapsed" class="tools-section-body">
           <el-tabs v-model="toolsTab" class="tools-tabs">
             <el-tab-pane label="概览" name="overview">
+              <div v-if="marketIndices.length" class="indices-bar">
+                <div
+                  v-for="idx in marketIndices"
+                  :key="idx.code"
+                  class="index-card"
+                  :class="{
+                    up: Number(idx.percent) > 0,
+                    down: Number(idx.percent) < 0,
+                  }"
+                >
+                  <span class="index-name">{{ idx.name }}</span>
+                  <span class="index-price">{{ idx.price }}</span>
+                  <span class="index-change">
+                    {{ Number(idx.percent) > 0 ? "+" : "" }}{{ idx.percent }}%
+                  </span>
+                </div>
+              </div>
               <div class="summary-grid">
                 <div class="summary-card">
                   <div class="summary-label">持仓市值</div>
@@ -258,44 +275,6 @@
                 </div>
               </div>
             </el-tab-pane>
-            <el-tab-pane label="资讯" name="news">
-              <div class="news-panel-inner">
-                <div class="section-head">
-                  <div class="section-title-row">
-                    <span class="last-update" v-if="newsLastUpdate">
-                      更新于 {{ formatTime(newsLastUpdate) }}
-                    </span>
-                  </div>
-                  <el-button
-                    size="small"
-                    :loading="newsLoading"
-                    @click="loadNews"
-                  >
-                    刷新
-                  </el-button>
-                </div>
-                <div class="news-list">
-                  <el-empty
-                    v-if="!newsLoading && !newsList.length"
-                    description="暂无资讯"
-                  />
-                  <ul v-else class="news-items">
-                    <li v-for="item in newsList" :key="item.link || item.title">
-                      <a :href="item.link" target="_blank" rel="noopener">
-                        {{ item.title }}
-                      </a>
-                      <span class="muted">{{
-                        formatNewsTime(item.pubDate)
-                      }}</span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </el-tab-pane>
-
-            <el-tab-pane label="量化" name="quant">
-              <QuantPanel :candidates="displayList" />
-            </el-tab-pane>
           </el-tabs>
         </div>
       </section>
@@ -313,18 +292,13 @@
           <div class="actions">
             <el-dropdown trigger="click" @command="handleAiCommand">
               <el-button type="primary" plain>
-                AI / 选股
+                AI 工具
                 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="pick">AI 选股</el-dropdown-item>
-                  <el-dropdown-item command="sector">板块最强</el-dropdown-item>
-                  <el-dropdown-item command="afterClose"
-                    >收盘复盘</el-dropdown-item
-                  >
+                  <el-dropdown-item command="sector">市场总览</el-dropdown-item>
                   <el-dropdown-item command="screen">条件选股</el-dropdown-item>
-                  <el-dropdown-item command="radar">盘面雷达</el-dropdown-item>
                   <el-dropdown-item command="journal"
                     >复盘笔记</el-dropdown-item
                   >
@@ -388,7 +362,6 @@
           :loading="loading"
           @remove="removeCode"
           @set-holding="openHoldingModal"
-          @set-group="openGroupAssign"
           @ai-analyze="openAiAnalyze"
           @kline="openKline"
         />
@@ -466,30 +439,6 @@
         </div>
       </div>
     </el-dialog>
-    <el-dialog
-      v-model="groupAssignModal"
-      :title="`调整分组 · ${groupAssignStock?.name ?? ''} (${groupAssignStock?.code ?? ''})`"
-      width="380px"
-      @close="closeGroupAssign"
-    >
-      <el-form label-position="top">
-        <el-form-item label="选择分组">
-          <el-select v-model="groupAssignId" style="width: 100%">
-            <el-option
-              v-for="group in groups"
-              :key="group.id"
-              :label="group.name"
-              :value="group.id"
-            />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="closeGroupAssign">取消</el-button>
-        <el-button type="primary" @click="applyGroupAssign">保存</el-button>
-      </template>
-    </el-dialog>
-
     <!-- AI 分析 -->
     <el-dialog
       v-model="aiAnalyzeModal"
@@ -691,122 +640,24 @@
       </div>
     </el-dialog>
 
-    <!-- AI 选股 -->
-    <el-dialog
-      v-model="aiPickModal"
-      title="AI 选股（基于当前自选列表）"
-      width="780px"
-      destroy-on-close
-      class="ai-dialog"
-    >
-      <div class="ai-pick-controls">
-        <el-form inline>
-          <el-form-item label="TopN">
-            <el-input-number v-model="aiPickTopN" :min="1" :max="10" />
-          </el-form-item>
-          <el-form-item label="周期">
-            <el-select v-model="aiPickHorizon" style="width: 180px">
-              <el-option label="短线 1-5 天" value="swing_1_5_days" />
-              <el-option label="波段 1-4 周" value="swing_1_4_weeks" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="风险">
-            <el-select v-model="aiPickRisk" style="width: 140px">
-              <el-option label="低" value="low" />
-              <el-option label="中" value="medium" />
-              <el-option label="高" value="high" />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <el-button
-              type="primary"
-              :loading="aiPickLoading"
-              @click="runAiPick"
-            >
-              开始计算
-            </el-button>
-          </el-form-item>
-        </el-form>
-      </div>
-
-      <el-skeleton v-if="aiPickLoading" :rows="10" animated />
-      <template v-else>
-        <el-empty v-if="!aiPickResult" description="暂无结果" />
-        <div v-else class="ai-block">
-          <div
-            v-for="p in aiPickResult.picks"
-            :key="p.code"
-            class="ai-pick-item"
-          >
-            <div class="ai-pick-head">
-              <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
-              <span class="muted">{{ p.bias }}</span>
-            </div>
-            <ul>
-              <li v-for="(r, i) in p.reason" :key="i">{{ r }}</li>
-            </ul>
-            <div class="ai-value">
-              <div><b>入场：</b>{{ p.plan.entry }}</div>
-              <div><b>止损/无效：</b>{{ p.plan.invalidation }}</div>
-              <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
-            </div>
-            <div class="ai-value">
-              <div><b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}</div>
-            </div>
-            <el-divider />
-          </div>
-          <div class="ai-disclaimer">{{ aiPickResult.disclaimer }}</div>
-        </div>
-      </template>
-      <el-divider />
-      <div class="ai-history">
-        <div class="ai-history-head">
-          <div class="ai-history-title">历史记录</div>
-          <el-button
-            link
-            type="danger"
-            size="small"
-            :disabled="!aiPickHistory.length"
-            @click="clearAiPickHistory"
-          >
-            清空
-          </el-button>
-        </div>
-        <el-empty v-if="!aiPickHistory.length" description="暂无历史" />
-        <div v-else class="ai-history-list">
-          <div
-            v-for="item in aiPickHistory"
-            :key="item.id"
-            class="ai-history-item"
-          >
-            <div class="ai-history-main">
-              <div class="ai-history-title-row">
-                <b>AI 选股</b>
-                <span class="muted">{{ formatDateTime(item.ts) }}</span>
-              </div>
-              <div class="muted">
-                Top{{ item.params.topN }} · 周期
-                {{ formatHorizon(item.params.horizon) }} · 风险
-                {{ formatRisk(item.params.riskProfile) }} · 候选
-                {{ item.params.candidates }}
-              </div>
-            </div>
-            <el-button size="small" @click="applyAiPickHistory(item)">
-              查看
-            </el-button>
-          </div>
-        </div>
-      </div>
-    </el-dialog>
-
-    <!-- 板块最强（盘中） -->
+    <!-- 市场总览 -->
     <el-dialog
       v-model="aiSectorModal"
-      title="板块最强（A股）"
+      title="市场总览（A股）"
       width="820px"
       destroy-on-close
       class="ai-dialog"
     >
+      <div class="market-mode-tabs">
+        <el-radio-group
+          v-model="aiSectorMode"
+          size="small"
+          @change="runAiSectorNow"
+        >
+          <el-radio-button label="intraday">盘中实时</el-radio-button>
+          <el-radio-button label="after_close">盘后复盘</el-radio-button>
+        </el-radio-group>
+      </div>
       <el-skeleton v-if="aiSectorLoading" :rows="12" animated />
       <template v-else>
         <el-empty v-if="!aiSectorResult" description="暂无结果" />
@@ -878,7 +729,7 @@
           >
             <div class="ai-history-main">
               <div class="ai-history-title-row">
-                <b>板块最强</b>
+                <b>市场总览</b>
                 <span class="muted">{{ formatDateTime(item.ts) }}</span>
               </div>
               <div class="muted">
@@ -900,114 +751,6 @@
           type="primary"
           :loading="aiSectorLoading"
           @click="runAiSectorNow"
-        >
-          刷新
-        </el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 收盘复盘 -->
-    <el-dialog
-      v-model="aiAfterCloseModal"
-      title="收盘复盘（A股）"
-      width="820px"
-      destroy-on-close
-      class="ai-dialog"
-    >
-      <el-skeleton v-if="aiAfterCloseLoading" :rows="12" animated />
-      <template v-else>
-        <el-empty v-if="!aiAfterCloseResult" description="暂无结果" />
-        <div v-else class="ai-block">
-          <div
-            class="ai-row"
-            v-for="s in aiAfterCloseResult.hotSectors"
-            :key="s.code"
-          >
-            <div class="ai-label">#{{ s.rank }} {{ s.name }}</div>
-            <div class="ai-value">
-              <div class="muted">{{ s.kind }} · {{ s.code }}</div>
-              <ul>
-                <li v-for="(x, i) in s.whyHot" :key="i">{{ x }}</li>
-              </ul>
-              <div class="muted">风险：{{ s.riskNotes?.join("；") }}</div>
-            </div>
-          </div>
-          <el-divider />
-          <div
-            v-if="aiAfterCloseResult.openCandidates?.length"
-            class="ai-block"
-          >
-            <div class="ai-label">建议关注/开仓候选</div>
-            <div
-              v-for="p in aiAfterCloseResult.openCandidates"
-              :key="p.code"
-              class="ai-pick-item"
-            >
-              <div class="ai-pick-head">
-                <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
-              </div>
-              <ul>
-                <li v-for="(r, i) in p.reason" :key="i">{{ r }}</li>
-              </ul>
-              <div class="ai-value">
-                <div><b>入场：</b>{{ p.plan.entry }}</div>
-                <div><b>止损/无效：</b>{{ p.plan.invalidation }}</div>
-                <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
-              </div>
-              <div class="ai-value">
-                <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
-              </div>
-              <el-divider />
-            </div>
-          </div>
-          <div class="ai-disclaimer">{{ aiAfterCloseResult.disclaimer }}</div>
-        </div>
-      </template>
-      <el-divider />
-      <div class="ai-history">
-        <div class="ai-history-head">
-          <div class="ai-history-title">历史记录</div>
-          <el-button
-            link
-            type="danger"
-            size="small"
-            :disabled="!aiAfterCloseHistory.length"
-            @click="clearAiAfterCloseHistory"
-          >
-            清空
-          </el-button>
-        </div>
-        <el-empty v-if="!aiAfterCloseHistory.length" description="暂无历史" />
-        <div v-else class="ai-history-list">
-          <div
-            v-for="item in aiAfterCloseHistory"
-            :key="item.id"
-            class="ai-history-item"
-          >
-            <div class="ai-history-main">
-              <div class="ai-history-title-row">
-                <b>收盘复盘</b>
-                <span class="muted">{{ formatDateTime(item.ts) }}</span>
-              </div>
-              <div class="muted">
-                Top板块 {{ item.params.topSectorN }} · Top个股
-                {{ item.params.topStockN }} · 周期
-                {{ formatHorizon(item.params.horizon) }} · 风险
-                {{ formatRisk(item.params.riskProfile) }}
-              </div>
-            </div>
-            <el-button size="small" @click="applyAiAfterCloseHistory(item)">
-              查看
-            </el-button>
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="aiAfterCloseModal = false">关闭</el-button>
-        <el-button
-          type="primary"
-          :loading="aiAfterCloseLoading"
-          @click="runAiAfterClose"
         >
           刷新
         </el-button>
@@ -1131,311 +874,6 @@
       </div>
     </el-dialog>
 
-    <!-- 盘面雷达 -->
-    <el-dialog
-      v-model="aiRadarModal"
-      title="盘面雷达（A股）"
-      width="900px"
-      destroy-on-close
-      class="ai-dialog"
-    >
-      <div style="margin-bottom: 12px">
-        <el-form inline>
-          <el-form-item label="周期">
-            <el-select v-model="aiPickHorizon" style="width: 180px">
-              <el-option label="短线 1-5 天" value="swing_1_5_days" />
-              <el-option label="波段 1-4 周" value="swing_1_4_weeks" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="风险">
-            <el-select v-model="aiPickRisk" style="width: 140px">
-              <el-option label="低" value="low" />
-              <el-option label="中" value="medium" />
-              <el-option label="高" value="high" />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <el-button
-              type="primary"
-              :loading="aiRadarLoading"
-              @click="runAiRadar"
-            >
-              刷新
-            </el-button>
-          </el-form-item>
-        </el-form>
-      </div>
-
-      <el-skeleton v-if="aiRadarLoading" :rows="12" animated />
-      <template v-else>
-        <el-empty v-if="!aiRadarResult" description="暂无结果" />
-        <div v-else class="ai-block">
-          <div class="ai-row">
-            <div class="ai-label">市场</div>
-            <div class="ai-value">
-              <div><b>情绪：</b>{{ aiRadarResult.market.sentiment }}</div>
-              <div><b>风险：</b>{{ aiRadarResult.market.riskLevel }}</div>
-              <div>
-                <b>主线：</b>{{ aiRadarResult.market.mainThemes?.join("，") }}
-              </div>
-              <ul>
-                <li v-for="(x, i) in aiRadarResult.market.notes" :key="i">
-                  {{ x }}
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="ai-row" v-if="aiRadarResult.watchSectors?.length">
-            <div class="ai-label">观察板块</div>
-            <div class="ai-value">
-              {{ aiRadarResult.watchSectors.join("，") }}
-            </div>
-          </div>
-
-          <el-divider />
-          <div class="ai-label">强势热门（情绪/趋势）</div>
-          <div
-            v-for="p in aiRadarResult.baskets.hotMomentum"
-            :key="p.code"
-            class="ai-pick-item"
-          >
-            <div class="ai-pick-head">
-              <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
-              <span class="muted">{{ p.tags?.join("/") }}</span>
-            </div>
-            <ul>
-              <li v-for="(r, i) in p.reason" :key="i">{{ r }}</li>
-            </ul>
-            <div class="ai-value">
-              <div><b>入场：</b>{{ p.plan.entry }}</div>
-              <div><b>止损/无效：</b>{{ p.plan.invalidation }}</div>
-              <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
-            </div>
-            <div class="ai-value">
-              <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
-            </div>
-            <el-divider />
-          </div>
-
-          <div class="ai-label">低吸/回踩观察（偏稳）</div>
-          <div
-            v-for="p in aiRadarResult.baskets.lowAbsorbPullback"
-            :key="p.code"
-            class="ai-pick-item"
-          >
-            <div class="ai-pick-head">
-              <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
-              <span class="muted">{{ p.tags?.join("/") }}</span>
-            </div>
-            <ul>
-              <li v-for="(r, i) in p.reason" :key="i">{{ r }}</li>
-            </ul>
-            <div class="ai-value">
-              <div><b>入场：</b>{{ p.plan.entry }}</div>
-              <div><b>止损/无效：</b>{{ p.plan.invalidation }}</div>
-              <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
-            </div>
-            <div class="ai-value">
-              <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
-            </div>
-            <el-divider />
-          </div>
-
-          <div class="ai-label">埋伏观察（等待触发）</div>
-          <div
-            v-for="p in aiRadarResult.baskets.ambushWatch"
-            :key="p.code"
-            class="ai-pick-item"
-          >
-            <div class="ai-pick-head">
-              <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
-              <span class="muted">{{ p.tags?.join("/") }}</span>
-            </div>
-            <ul>
-              <li v-for="(r, i) in p.reason" :key="i">{{ r }}</li>
-            </ul>
-            <div class="ai-value"><b>触发：</b>{{ p.trigger?.join("；") }}</div>
-            <div class="ai-value">
-              <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
-            </div>
-            <el-divider />
-          </div>
-
-          <div class="ai-label">回避清单</div>
-          <ul>
-            <li v-for="x in aiRadarResult.baskets.avoid" :key="x.code">
-              <b>{{ x.name }} ({{ x.code }})</b>：{{ x.why }}
-            </li>
-          </ul>
-
-          <div class="ai-disclaimer">{{ aiRadarResult.disclaimer }}</div>
-        </div>
-      </template>
-      <el-divider />
-      <div class="ai-history">
-        <div class="ai-history-head">
-          <div class="ai-history-title">历史记录</div>
-          <el-button
-            link
-            type="danger"
-            size="small"
-            :disabled="!aiRadarHistory.length"
-            @click="clearAiRadarHistory"
-          >
-            清空
-          </el-button>
-        </div>
-        <el-empty v-if="!aiRadarHistory.length" description="暂无历史" />
-        <div v-else class="ai-history-list">
-          <div
-            v-for="item in aiRadarHistory"
-            :key="item.id"
-            class="ai-history-item"
-          >
-            <div class="ai-history-main">
-              <div class="ai-history-title-row">
-                <b>盘面雷达</b>
-                <span class="muted">{{ formatDateTime(item.ts) }}</span>
-              </div>
-              <div class="muted">
-                周期 {{ formatHorizon(item.params.horizon) }} · 风险
-                {{ formatRisk(item.params.riskProfile) }}
-              </div>
-            </div>
-            <el-button size="small" @click="applyAiRadarHistory(item)">
-              查看
-            </el-button>
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="aiRadarModal = false">关闭</el-button>
-        <el-button type="primary" :loading="aiRadarLoading" @click="runAiRadar"
-          >刷新</el-button
-        >
-      </template>
-    </el-dialog>
-
-    <!-- 低吸/回踩扫描 -->
-    <el-dialog
-      v-model="aiPullbackModal"
-      title="低吸/回踩扫描（AI）"
-      width="920px"
-      destroy-on-close
-      class="ai-dialog"
-    >
-      <div style="margin-bottom: 12px">
-        <el-form inline>
-          <el-form-item label="范围">
-            <el-select v-model="aiPullbackScope" style="width: 140px">
-              <el-option label="全市场活跃" value="market" />
-              <el-option label="仅自选" value="watchlist" />
-            </el-select>
-          </el-form-item>
-          <el-form-item v-if="aiPullbackScope === 'market'" label="市场候选">
-            <el-input-number
-              v-model="aiPullbackMarketLimit"
-              :min="50"
-              :max="800"
-            />
-          </el-form-item>
-          <el-form-item label="取前">
-            <el-input-number v-model="aiPullbackTopN" :min="30" :max="200" />
-          </el-form-item>
-          <el-form-item>
-            <el-button
-              type="primary"
-              :loading="aiPullbackLoading"
-              @click="runAiPullbackScan"
-            >
-              开始扫描
-            </el-button>
-          </el-form-item>
-        </el-form>
-      </div>
-
-      <el-skeleton v-if="aiPullbackLoading" :rows="12" animated />
-      <template v-else>
-        <el-empty v-if="!aiPullbackResult" description="暂无结果" />
-        <div v-else class="ai-block">
-          <div class="ai-row">
-            <div class="ai-label">概览</div>
-            <div class="ai-value">
-              <ul>
-                <li
-                  v-for="(x, i) in aiPullbackResult.overview.marketNotes"
-                  :key="i"
-                >
-                  {{ x }}
-                </li>
-              </ul>
-              <div>
-                <b>风险：</b
-                >{{ aiPullbackResult.overview.riskNotes?.join("；") }}
-              </div>
-            </div>
-          </div>
-          <el-divider />
-
-          <div class="ai-label">回踩低吸（波段）</div>
-          <div
-            v-for="p in aiPullbackResult.lowAbsorb"
-            :key="p.code"
-            class="ai-pick-item"
-          >
-            <div class="ai-pick-head">
-              <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
-            </div>
-            <ul>
-              <li v-for="(r, i) in p.why" :key="i">{{ r }}</li>
-            </ul>
-            <div class="ai-value"><b>触发：</b>{{ p.trigger?.join("；") }}</div>
-            <div class="ai-value">
-              <div><b>入场：</b>{{ p.plan.entry }}</div>
-              <div><b>无效/止损：</b>{{ p.plan.invalidation }}</div>
-              <div><b>止盈：</b>{{ p.plan.takeProfit }}</div>
-            </div>
-            <div class="ai-value">
-              <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
-            </div>
-            <el-divider />
-          </div>
-
-          <div class="ai-label">埋伏观察（等待触发）</div>
-          <div
-            v-for="p in aiPullbackResult.ambush"
-            :key="p.code"
-            class="ai-pick-item"
-          >
-            <div class="ai-pick-head">
-              <b>#{{ p.rank }} {{ p.name }} ({{ p.code }})</b>
-            </div>
-            <ul>
-              <li v-for="(r, i) in p.why" :key="i">{{ r }}</li>
-            </ul>
-            <div class="ai-value"><b>触发：</b>{{ p.trigger?.join("；") }}</div>
-            <div class="ai-value"><b>无效：</b>{{ p.invalidation }}</div>
-            <div class="ai-value">
-              <b>风险：</b>{{ p.riskNotes?.join("；") || "—" }}
-            </div>
-            <el-divider />
-          </div>
-
-          <div class="ai-label">回避</div>
-          <ul>
-            <li v-for="x in aiPullbackResult.avoid" :key="x.code">
-              <b>{{ x.name }} ({{ x.code }})</b>：{{ x.why }}
-            </li>
-          </ul>
-
-          <div class="ai-disclaimer">{{ aiPullbackResult.disclaimer }}</div>
-        </div>
-      </template>
-      <template #footer>
-        <el-button @click="aiPullbackModal = false">关闭</el-button>
-      </template>
-    </el-dialog>
     <!-- 复盘笔记 -->
     <el-dialog
       v-model="aiJournalModal"
@@ -1618,39 +1056,24 @@ import { ArrowDown } from "@element-plus/icons-vue";
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 import StockSearch from "./components/StockSearch.vue";
 import StockTable from "./components/StockTable.vue";
-import QuantPanel from "./components/QuantPanel.vue";
-import {
-  fetchStockList,
-  fetchNews,
-  searchStock,
-  searchItemToCode,
-} from "./api/stock";
+import { fetchStockList, searchStock, searchItemToCode } from "./api/stock";
 import {
   aiAnalyzeStock as aiAnalyzeStockApi,
-  aiPickStocks,
   aiSectorNow,
-  aiAfterClose,
   aiScreenStocks,
-  aiMarketRadar,
   aiJournal,
-  aiPullbackScan,
 } from "./api/ai";
 import type {
   AiAnalyzeResult,
-  AiPickResult,
   AiSectorNowResult,
-  AiAfterCloseResult,
   AiScreenResult,
-  AiRadarResult,
   AiJournalResult,
-  AiPullbackResult,
 } from "./api/ai";
 import type {
   StockItem,
   SearchItem,
   StockPriceItem,
   SortType,
-  NewsItem,
 } from "./types/stock";
 import { SORT_LABELS } from "./types/stock";
 
@@ -1685,18 +1108,16 @@ const STORAGE_ALERT_KEY = "vue-stock-viewer-alerts";
 const STORAGE_HIDE_VALUE_KEY = "vue-stock-viewer-hideMarketValue";
 const STORAGE_HOLDING_FILTER_KEY = "vue-stock-viewer-holdingFilter";
 const STORAGE_AI_ANALYZE_HISTORY_KEY = "vue-stock-viewer-aiAnalyzeHistory";
-const STORAGE_AI_PICK_HISTORY_KEY = "vue-stock-viewer-aiPickHistory";
 const STORAGE_AI_SECTOR_HISTORY_KEY = "vue-stock-viewer-aiSectorHistory";
-const STORAGE_AI_AFTER_CLOSE_HISTORY_KEY =
-  "vue-stock-viewer-aiAfterCloseHistory";
 const STORAGE_AI_SCREEN_HISTORY_KEY = "vue-stock-viewer-aiScreenHistory";
-const STORAGE_AI_RADAR_HISTORY_KEY = "vue-stock-viewer-aiRadarHistory";
 const STORAGE_AI_JOURNAL_HISTORY_KEY = "vue-stock-viewer-aiJournalHistory";
 const ALL_GROUP_ID = "__all__";
+const MARKET_INDEX_CODES = ["sh000001", "sz399001", "sz399006"];
 const ALERT_COOLDOWN = 3 * 60 * 1000;
 const AI_HISTORY_LIMIT = 20;
 
 const searchKeyword = ref("");
+const marketIndices = ref<StockItem[]>([]);
 const searchLoading = ref(false);
 const searchSuggestions = ref<SearchItem[]>([]);
 const stockList = ref<StockItem[]>([]);
@@ -1706,9 +1127,6 @@ const loading = ref(false);
 const sortType = ref<SortType>(0);
 const stockPrice = ref<Record<string, StockPriceItem>>({});
 const alerts = ref<AlertRule[]>([]);
-const newsList = ref<NewsItem[]>([]);
-const newsLoading = ref(false);
-const newsLastUpdate = ref<number | null>(null);
 const alertForm = ref({
   code: "",
   type: "price" as AlertRule["type"],
@@ -1719,7 +1137,7 @@ const groupManageModal = ref(false);
 const newGroupName = ref("");
 const groupDrafts = ref<Record<string, string>>({});
 const hideMarketValue = ref(false);
-const toolsTab = ref<"overview" | "alerts" | "news" | "quant">("overview");
+const toolsTab = ref<"overview" | "alerts">("overview");
 const toolsCollapsed = ref(false);
 const isH5 = ref(false);
 function checkH5() {
@@ -1729,9 +1147,6 @@ function checkH5() {
   document.body.classList.toggle("h5", h5);
 }
 const holdingFilter = ref<"all" | "holding" | "not_holding">("all");
-const groupAssignModal = ref(false);
-const groupAssignStock = ref<StockItem | null>(null);
-const groupAssignId = ref<string>("");
 const holdingModal = ref(false);
 const holdingStock = ref<StockItem | null>(null);
 const holdingForm = ref({
@@ -1764,41 +1179,17 @@ const klineRefreshKey = ref(0);
 const tradeRiskPct = ref(3);
 const tradeTakePct = ref(6);
 
-const aiPickModal = ref(false);
-const aiPickLoading = ref(false);
-const aiPickResult = ref<AiPickResult | null>(null);
-const aiPickHistory = ref<
-  AiHistoryItem<
-    AiPickResult,
-    { topN: number; horizon: string; riskProfile: string; candidates: number }
-  >[]
->([]);
-const aiPickTopN = ref(3);
 const aiPickHorizon = ref("swing_1_5_days");
 const aiPickRisk = ref("medium");
 
-// AI · A股板块/条件选股
+// AI · 市场总览（原板块最强，合并盘中/盘后）
 const aiSectorModal = ref(false);
 const aiSectorLoading = ref(false);
+const aiSectorMode = ref<"intraday" | "after_close">("intraday");
 const aiSectorResult = ref<AiSectorNowResult | null>(null);
 const aiSectorHistory = ref<
   AiHistoryItem<
     AiSectorNowResult,
-    {
-      topSectorN: number;
-      topStockN: number;
-      horizon: string;
-      riskProfile: string;
-    }
-  >[]
->([]);
-
-const aiAfterCloseModal = ref(false);
-const aiAfterCloseLoading = ref(false);
-const aiAfterCloseResult = ref<AiAfterCloseResult | null>(null);
-const aiAfterCloseHistory = ref<
-  AiHistoryItem<
-    AiAfterCloseResult,
     {
       topSectorN: number;
       topStockN: number;
@@ -1820,17 +1211,7 @@ const aiScreenHistory = ref<
   >[]
 >([]);
 
-// AI · 盘面雷达 / 复盘笔记
-const aiRadarModal = ref(false);
-const aiRadarLoading = ref(false);
-const aiRadarResult = ref<AiRadarResult | null>(null);
-const aiRadarHistory = ref<
-  AiHistoryItem<
-    AiRadarResult,
-    { limit: number; horizon: string; riskProfile: string }
-  >[]
->([]);
-
+// AI · 复盘笔记
 const aiJournalModal = ref(false);
 const aiJournalLoading = ref(false);
 const aiJournalNotes = ref("");
@@ -1841,14 +1222,6 @@ const aiJournalHistory = ref<
     { notes: string; horizon: string; riskProfile: string }
   >[]
 >([]);
-
-// AI · 低吸/回踩扫描
-const aiPullbackModal = ref(false);
-const aiPullbackLoading = ref(false);
-const aiPullbackScope = ref<"watchlist" | "market">("market");
-const aiPullbackMarketLimit = ref(400);
-const aiPullbackTopN = ref(120);
-const aiPullbackResult = ref<AiPullbackResult | null>(null);
 
 function createGroupId() {
   return `g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -1959,24 +1332,12 @@ function saveAiHistory() {
     JSON.stringify(aiAnalyzeHistory.value),
   );
   localStorage.setItem(
-    STORAGE_AI_PICK_HISTORY_KEY,
-    JSON.stringify(aiPickHistory.value),
-  );
-  localStorage.setItem(
     STORAGE_AI_SECTOR_HISTORY_KEY,
     JSON.stringify(aiSectorHistory.value),
   );
   localStorage.setItem(
-    STORAGE_AI_AFTER_CLOSE_HISTORY_KEY,
-    JSON.stringify(aiAfterCloseHistory.value),
-  );
-  localStorage.setItem(
     STORAGE_AI_SCREEN_HISTORY_KEY,
     JSON.stringify(aiScreenHistory.value),
-  );
-  localStorage.setItem(
-    STORAGE_AI_RADAR_HISTORY_KEY,
-    JSON.stringify(aiRadarHistory.value),
   );
   localStorage.setItem(
     STORAGE_AI_JOURNAL_HISTORY_KEY,
@@ -1986,11 +1347,8 @@ function saveAiHistory() {
 
 function loadAiHistory() {
   aiAnalyzeHistory.value = readHistory(STORAGE_AI_ANALYZE_HISTORY_KEY);
-  aiPickHistory.value = readHistory(STORAGE_AI_PICK_HISTORY_KEY);
   aiSectorHistory.value = readHistory(STORAGE_AI_SECTOR_HISTORY_KEY);
-  aiAfterCloseHistory.value = readHistory(STORAGE_AI_AFTER_CLOSE_HISTORY_KEY);
   aiScreenHistory.value = readHistory(STORAGE_AI_SCREEN_HISTORY_KEY);
-  aiRadarHistory.value = readHistory(STORAGE_AI_RADAR_HISTORY_KEY);
   aiJournalHistory.value = readHistory(STORAGE_AI_JOURNAL_HISTORY_KEY);
 }
 
@@ -2251,16 +1609,6 @@ function formatTime(ts: number) {
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}:${d.getSeconds().toString().padStart(2, "0")}`;
 }
 
-function formatNewsTime(pubDate?: string) {
-  if (!pubDate) return "—";
-  const d = new Date(pubDate);
-  if (Number.isNaN(d.getTime())) return pubDate;
-  return `${d.getMonth() + 1}/${d.getDate()} ${d
-    .getHours()
-    .toString()
-    .padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
-}
-
 function formatDateTime(ts: number) {
   const d = new Date(ts);
   const y = d.getFullYear();
@@ -2328,35 +1676,6 @@ function removeGroup(groupId: string) {
   }
   saveGroups();
   updateGroupDrafts();
-}
-
-function openGroupAssign(row: StockItem) {
-  groupAssignStock.value = row;
-  const owned = groups.value.find((group) =>
-    group.codes.some((c) => c.toLowerCase() === row.code.toLowerCase()),
-  );
-  groupAssignId.value = owned?.id || groups.value[0]?.id || "";
-  groupAssignModal.value = true;
-}
-
-function applyGroupAssign() {
-  if (!groupAssignStock.value || !groupAssignId.value) return;
-  const code = groupAssignStock.value.code.toLowerCase();
-  groups.value = groups.value.map((group) => {
-    const without = group.codes.filter((c) => c.toLowerCase() !== code);
-    if (group.id === groupAssignId.value) {
-      return { ...group, codes: [...without, code] };
-    }
-    return { ...group, codes: without };
-  });
-  saveGroups();
-  groupAssignModal.value = false;
-  groupAssignStock.value = null;
-}
-
-function closeGroupAssign() {
-  groupAssignModal.value = false;
-  groupAssignStock.value = null;
 }
 
 function requestNotificationPermission() {
@@ -2465,15 +1784,11 @@ function checkAlerts(list: StockItem[]) {
   if (touched) saveAlerts();
 }
 
-async function loadNews() {
-  newsLoading.value = true;
+async function loadMarketIndices() {
   try {
-    newsList.value = await fetchNews(20);
-    newsLastUpdate.value = Date.now();
-  } catch (e) {
-    console.error(e);
-  } finally {
-    newsLoading.value = false;
+    marketIndices.value = await fetchStockList(MARKET_INDEX_CODES);
+  } catch {
+    /* silent */
   }
 }
 
@@ -2485,6 +1800,7 @@ watch(realtimeMode, (on) => {
   if (on) {
     realtimeTimer = setInterval(() => {
       loadStockList({ background: true });
+      loadMarketIndices();
     }, realtimeInterval.value * 1000);
   }
 });
@@ -2564,52 +1880,9 @@ async function runAiAnalyze() {
 // (aiAnalyzeStockApi 已在 import 中 alias)
 
 function handleAiCommand(command: string) {
-  if (command === "pick") openAiPickModal();
-  else if (command === "sector") openAiSectorModal();
-  else if (command === "afterClose") openAiAfterCloseModal();
+  if (command === "sector") openAiSectorModal();
   else if (command === "screen") openAiScreenModal();
-  else if (command === "radar") openAiRadarModal();
   else if (command === "journal") openAiJournalModal();
-  else if (command === "pullback") openAiPullbackModal();
-}
-
-function openAiPickModal() {
-  aiPickModal.value = true;
-  aiPickLoading.value = false;
-}
-
-async function runAiPick() {
-  if (!displayList.value.length) {
-    ElMessage.warning("自选列表为空，先添加一些候选标的");
-    return;
-  }
-  aiPickLoading.value = true;
-  aiPickResult.value = null;
-  try {
-    const result = await aiPickStocks({
-      candidates: displayList.value,
-      topN: aiPickTopN.value,
-      horizon: aiPickHorizon.value,
-      riskProfile: aiPickRisk.value,
-    });
-    aiPickResult.value = result;
-    addAiPickHistory(
-      {
-        topN: aiPickTopN.value,
-        horizon: aiPickHorizon.value,
-        riskProfile: aiPickRisk.value,
-        candidates: displayList.value.length,
-      },
-      result,
-    );
-  } catch (e) {
-    console.error(e);
-    ElMessage.error(
-      "AI 选股失败：请检查 VOLCENGINE_API_KEY/模型ID 或服务是否可用",
-    );
-  } finally {
-    aiPickLoading.value = false;
-  }
 }
 
 function openAiSectorModal() {
@@ -2622,9 +1895,11 @@ async function runAiSectorNow() {
   aiSectorLoading.value = true;
   aiSectorResult.value = null;
   try {
+    const isAfterClose = aiSectorMode.value === "after_close";
     const params = {
-      topSectorN: 10,
-      topStockN: 40,
+      mode: aiSectorMode.value,
+      topSectorN: isAfterClose ? 15 : 10,
+      topStockN: isAfterClose ? 60 : 40,
       horizon: aiPickHorizon.value,
       riskProfile: aiPickRisk.value,
     };
@@ -2633,36 +1908,9 @@ async function runAiSectorNow() {
     addAiSectorHistory(params, result);
   } catch (e) {
     console.error(e);
-    ElMessage.error("板块分析失败：请检查后端服务/开源接口是否可用");
+    ElMessage.error("市场总览加载失败：请检查后端服务");
   } finally {
     aiSectorLoading.value = false;
-  }
-}
-
-function openAiAfterCloseModal() {
-  aiAfterCloseModal.value = true;
-  aiAfterCloseLoading.value = false;
-}
-
-async function runAiAfterClose() {
-  aiAfterCloseModal.value = true;
-  aiAfterCloseLoading.value = true;
-  aiAfterCloseResult.value = null;
-  try {
-    const params = {
-      topSectorN: 15,
-      topStockN: 40,
-      horizon: aiPickHorizon.value,
-      riskProfile: aiPickRisk.value,
-    };
-    const result = await aiAfterClose(params);
-    aiAfterCloseResult.value = result;
-    addAiAfterCloseHistory(params, result);
-  } catch (e) {
-    console.error(e);
-    ElMessage.error("收盘复盘失败：请检查后端服务/开源接口是否可用");
-  } finally {
-    aiAfterCloseLoading.value = false;
   }
 }
 
@@ -2694,32 +1942,6 @@ async function runAiScreen() {
     ElMessage.error("条件选股失败：请检查后端服务/开源接口是否可用");
   } finally {
     aiScreenLoading.value = false;
-  }
-}
-
-function openAiRadarModal() {
-  aiRadarModal.value = true;
-  aiRadarLoading.value = false;
-}
-
-async function runAiRadar() {
-  aiRadarModal.value = true;
-  aiRadarLoading.value = true;
-  aiRadarResult.value = null;
-  try {
-    const params = {
-      limit: 280,
-      horizon: aiPickHorizon.value,
-      riskProfile: aiPickRisk.value,
-    };
-    const result = await aiMarketRadar(params);
-    aiRadarResult.value = result;
-    addAiRadarHistory(params, result);
-  } catch (e) {
-    console.error(e);
-    ElMessage.error("盘面雷达失败：请检查后端服务/开源接口/AI KEY");
-  } finally {
-    aiRadarLoading.value = false;
   }
 }
 
@@ -2786,33 +2008,6 @@ async function runAiJournal() {
   }
 }
 
-function openAiPullbackModal() {
-  aiPullbackModal.value = true;
-  aiPullbackLoading.value = false;
-  aiPullbackResult.value = null;
-}
-
-async function runAiPullbackScan() {
-  aiPullbackModal.value = true;
-  aiPullbackLoading.value = true;
-  aiPullbackResult.value = null;
-  try {
-    const result = await aiPullbackScan({
-      scope: aiPullbackScope.value,
-      watchlistCodes: displayList.value.map((x) => x.code),
-      marketLimit: aiPullbackMarketLimit.value,
-      topN: aiPullbackTopN.value,
-      horizon: aiPickHorizon.value,
-      riskProfile: aiPickRisk.value,
-    });
-    aiPullbackResult.value = result;
-  } catch (e) {
-    console.error(e);
-    ElMessage.error("低吸/回踩扫描失败：请检查后端服务/开源接口/AI KEY");
-  } finally {
-    aiPullbackLoading.value = false;
-  }
-}
 function addAiAnalyzeHistory(
   params: { stock: StockItem; horizon: string; riskProfile: string },
   result: AiAnalyzeResult,
@@ -2827,31 +2022,6 @@ function addAiAnalyzeHistory(
     result,
   };
   aiAnalyzeHistory.value = [item, ...aiAnalyzeHistory.value].slice(
-    0,
-    AI_HISTORY_LIMIT,
-  );
-  saveAiHistory();
-}
-
-function addAiPickHistory(
-  params: {
-    topN: number;
-    horizon: string;
-    riskProfile: string;
-    candidates: number;
-  },
-  result: AiPickResult,
-) {
-  const item: AiHistoryItem<
-    AiPickResult,
-    { topN: number; horizon: string; riskProfile: string; candidates: number }
-  > = {
-    id: createHistoryId(),
-    ts: Date.now(),
-    params,
-    result,
-  };
-  aiPickHistory.value = [item, ...aiPickHistory.value].slice(
     0,
     AI_HISTORY_LIMIT,
   );
@@ -2882,36 +2052,6 @@ function addAiSectorHistory(
     result,
   };
   aiSectorHistory.value = [item, ...aiSectorHistory.value].slice(
-    0,
-    AI_HISTORY_LIMIT,
-  );
-  saveAiHistory();
-}
-
-function addAiAfterCloseHistory(
-  params: {
-    topSectorN: number;
-    topStockN: number;
-    horizon: string;
-    riskProfile: string;
-  },
-  result: AiAfterCloseResult,
-) {
-  const item: AiHistoryItem<
-    AiAfterCloseResult,
-    {
-      topSectorN: number;
-      topStockN: number;
-      horizon: string;
-      riskProfile: string;
-    }
-  > = {
-    id: createHistoryId(),
-    ts: Date.now(),
-    params,
-    result,
-  };
-  aiAfterCloseHistory.value = [item, ...aiAfterCloseHistory.value].slice(
     0,
     AI_HISTORY_LIMIT,
   );
@@ -2956,19 +2096,6 @@ function applyAiAnalyzeHistory(
   aiAnalyzeModal.value = true;
 }
 
-function applyAiPickHistory(
-  item: AiHistoryItem<
-    AiPickResult,
-    { topN: number; horizon: string; riskProfile: string; candidates: number }
-  >,
-) {
-  aiPickTopN.value = item.params.topN;
-  aiPickHorizon.value = item.params.horizon;
-  aiPickRisk.value = item.params.riskProfile;
-  aiPickResult.value = item.result;
-  aiPickModal.value = true;
-}
-
 function applyAiSectorHistory(
   item: AiHistoryItem<
     AiSectorNowResult,
@@ -2984,43 +2111,6 @@ function applyAiSectorHistory(
   aiPickHorizon.value = item.params.horizon;
   aiPickRisk.value = item.params.riskProfile;
   aiSectorModal.value = true;
-}
-
-function applyAiAfterCloseHistory(
-  item: AiHistoryItem<
-    AiAfterCloseResult,
-    {
-      topSectorN: number;
-      topStockN: number;
-      horizon: string;
-      riskProfile: string;
-    }
-  >,
-) {
-  aiAfterCloseResult.value = item.result;
-  aiPickHorizon.value = item.params.horizon;
-  aiPickRisk.value = item.params.riskProfile;
-  aiAfterCloseModal.value = true;
-}
-
-function addAiRadarHistory(
-  params: { limit: number; horizon: string; riskProfile: string },
-  result: AiRadarResult,
-) {
-  const item: AiHistoryItem<
-    AiRadarResult,
-    { limit: number; horizon: string; riskProfile: string }
-  > = {
-    id: createHistoryId(),
-    ts: Date.now(),
-    params,
-    result,
-  };
-  aiRadarHistory.value = [item, ...aiRadarHistory.value].slice(
-    0,
-    AI_HISTORY_LIMIT,
-  );
-  saveAiHistory();
 }
 
 function addAiJournalHistory(
@@ -3057,18 +2147,6 @@ function applyAiScreenHistory(
   aiScreenModal.value = true;
 }
 
-function applyAiRadarHistory(
-  item: AiHistoryItem<
-    AiRadarResult,
-    { limit: number; horizon: string; riskProfile: string }
-  >,
-) {
-  aiPickHorizon.value = item.params.horizon;
-  aiPickRisk.value = item.params.riskProfile;
-  aiRadarResult.value = item.result;
-  aiRadarModal.value = true;
-}
-
 function applyAiJournalHistory(
   item: AiHistoryItem<
     AiJournalResult,
@@ -3092,28 +2170,13 @@ function clearAiAnalyzeHistory() {
   saveAiHistory();
 }
 
-function clearAiPickHistory() {
-  aiPickHistory.value = [];
-  saveAiHistory();
-}
-
 function clearAiSectorHistory() {
   aiSectorHistory.value = [];
   saveAiHistory();
 }
 
-function clearAiAfterCloseHistory() {
-  aiAfterCloseHistory.value = [];
-  saveAiHistory();
-}
-
 function clearAiScreenHistory() {
   aiScreenHistory.value = [];
-  saveAiHistory();
-}
-
-function clearAiRadarHistory() {
-  aiRadarHistory.value = [];
   saveAiHistory();
 }
 
@@ -3245,7 +2308,7 @@ onMounted(() => {
   loadAiHistory();
   updateGroupDrafts();
   loadStockList();
-  loadNews();
+  loadMarketIndices();
 });
 onUnmounted(() => {
   window.removeEventListener("resize", checkH5);
@@ -3467,12 +2530,6 @@ onUnmounted(() => {
 }
 
 /* ===== Section Head ===== */
-.news-panel-inner .section-head {
-  margin-bottom: 0.5rem;
-}
-.news-panel-inner .news-list {
-  margin-top: 0;
-}
 .section-head {
   display: flex;
   justify-content: space-between;
@@ -3512,6 +2569,50 @@ onUnmounted(() => {
 }
 
 /* ===== Summary Cards ===== */
+.indices-bar {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+.index-card {
+  flex: 1;
+  min-width: 140px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-variant-numeric: tabular-nums;
+  transition: border-color 0.2s;
+}
+.index-card:hover {
+  border-color: var(--accent);
+}
+.index-card .index-name {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.index-card .index-price {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.index-card .index-change {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-left: auto;
+}
+.index-card.up .index-price,
+.index-card.up .index-change {
+  color: var(--down);
+}
+.index-card.down .index-price,
+.index-card.down .index-change {
+  color: var(--up);
+}
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -3599,50 +2700,6 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-}
-
-/* ===== News ===== */
-.news-panel {
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px dashed var(--border);
-}
-.news-panel h3 {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-.news-list {
-  margin-top: 0.5rem;
-}
-.news-items {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-.news-items li {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.45rem 0.5rem;
-  border-radius: var(--radius-sm);
-  transition: background var(--transition-fast);
-}
-.news-items li:hover {
-  background: rgba(255, 255, 255, 0.03);
-}
-.news-items a {
-  color: var(--text);
-  text-decoration: none;
-  flex: 1;
-  transition: color var(--transition-fast);
-}
-.news-items a:hover {
-  color: var(--accent-light);
 }
 
 /* ===== Groups ===== */
@@ -3821,9 +2878,6 @@ onUnmounted(() => {
   font-size: 0.8rem;
   font-style: italic;
 }
-.ai-pick-controls {
-  margin-bottom: 0.75rem;
-}
 .ai-pick-item {
   padding: 0.5rem 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
@@ -3835,5 +2889,8 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   margin-bottom: 0.35rem;
+}
+.market-mode-tabs {
+  margin-bottom: 1rem;
 }
 </style>

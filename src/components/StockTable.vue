@@ -158,53 +158,105 @@
             }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="210" align="center" fixed="right">
+        <el-table-column label="操作" width="160" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button
-              type="success"
-              link
-              size="small"
-              title="AI 分析"
-              @click="emit('aiAnalyze', row)"
-            >
-              AI
-            </el-button>
-            <el-button
-              type="info"
-              link
-              size="small"
-              title="K线图"
-              @click="emit('kline', row)"
-            >
-              K线
-            </el-button>
-            <el-button
-              type="primary"
-              link
-              size="small"
-              title="设置持仓"
-              @click="emit('setHolding', row)"
-            >
-              持仓
-            </el-button>
-            <el-button
-              type="warning"
-              link
-              size="small"
-              title="分组"
-              @click="emit('setGroup', row)"
-            >
-              分组
-            </el-button>
-            <el-button
-              type="danger"
-              link
-              size="small"
-              title="移除"
-              @click="emit('remove', row.code)"
-            >
-              ×
-            </el-button>
+            <div class="action-icons">
+              <el-tooltip content="AI 分析" placement="top" :show-after="400">
+                <el-button
+                  link
+                  size="small"
+                  class="act-btn act-ai"
+                  @click="emit('aiAnalyze', row)"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M12 2a4 4 0 0 1 4 4v1a1 1 0 0 0 1 1h1a4 4 0 0 1 0 8h-1a1 1 0 0 0-1 1v1a4 4 0 0 1-8 0v-1a1 1 0 0 0-1-1H6a4 4 0 0 1 0-8h1a1 1 0 0 0 1-1V6a4 4 0 0 1 4-4z"
+                    />
+                    <circle cx="12" cy="12" r="2" />
+                  </svg>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="K线图" placement="top" :show-after="400">
+                <el-button
+                  link
+                  size="small"
+                  class="act-btn act-kline"
+                  @click="emit('kline', row)"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M9 2v6" />
+                    <path d="M15 2v6" />
+                    <path d="M9 16v6" />
+                    <path d="M15 16v6" />
+                    <rect x="7" y="8" width="4" height="8" rx="1" />
+                    <rect x="13" y="4" width="4" height="12" rx="1" />
+                  </svg>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="设置持仓" placement="top" :show-after="400">
+                <el-button
+                  link
+                  size="small"
+                  class="act-btn act-hold"
+                  @click="emit('setHolding', row)"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" />
+                    <path d="M3 5v14a2 2 0 0 0 2 2h16v-5" />
+                    <path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
+                  </svg>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="移除" placement="top" :show-after="400">
+                <el-button
+                  link
+                  size="small"
+                  class="act-btn act-del"
+                  @click="emit('remove', row.code)"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </el-button>
+              </el-tooltip>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -223,7 +275,6 @@ defineProps<{
 const emit = defineEmits<{
   remove: [code: string];
   setHolding: [row: StockItem];
-  setGroup: [row: StockItem];
   aiAnalyze: [row: StockItem];
   kline: [row: StockItem];
 }>();
@@ -383,5 +434,36 @@ const sortByEarningPercent = (a: StockItem, b: StockItem) =>
   background-color: rgba(10, 10, 15, 0.75);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+}
+.action-icons {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}
+.act-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--text-muted);
+  transition: all 0.15s;
+}
+.act-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.act-ai:hover {
+  color: #10b981;
+}
+.act-kline:hover {
+  color: #6366f1;
+}
+.act-hold:hover {
+  color: #3b82f6;
+}
+.act-del:hover {
+  color: #ef4444;
 }
 </style>
