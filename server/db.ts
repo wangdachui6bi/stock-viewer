@@ -48,9 +48,20 @@ export async function initDatabase(): Promise<void> {
         username VARCHAR(50) NOT NULL UNIQUE,
         password_hash VARCHAR(255) NOT NULL,
         nickname VARCHAR(100) DEFAULT '',
+        role VARCHAR(20) DEFAULT 'user',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
+
+    // Ensure role column exists for older tables
+    try {
+      await conn.execute(`ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user' AFTER nickname`);
+    } catch {
+      // column already exists
+    }
+
+    // Set admin role for the admin user
+    await conn.execute(`UPDATE users SET role = 'admin' WHERE username = 'admin' AND role != 'admin'`);
 
     await conn.execute(`
       CREATE TABLE IF NOT EXISTS watchlist (

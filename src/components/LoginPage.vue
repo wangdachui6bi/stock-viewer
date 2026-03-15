@@ -67,12 +67,12 @@
 
 <script setup lang="ts">
 import { ref, reactive } from "vue";
+import { useRouter } from "vue-router";
 import { User as UserIcon, Lock as LockIcon } from "@element-plus/icons-vue";
-import { login, type User } from "@/api/authApi";
+import { login } from "@/api/authApi";
+import { setUser } from "@/stores/auth";
 
-const emit = defineEmits<{
-  (e: "success", user: User): void;
-}>();
+const router = useRouter();
 
 const formRef = ref();
 const loading = ref(false);
@@ -98,7 +98,8 @@ async function handleLogin() {
   errorMsg.value = "";
   try {
     const { user } = await login(form.username, form.password);
-    emit("success", user);
+    setUser(user);
+    router.push("/");
   } catch (e: any) {
     errorMsg.value =
       e?.response?.data?.error || e?.message || "登录失败，请重试";

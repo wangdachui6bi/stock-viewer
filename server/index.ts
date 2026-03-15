@@ -15,6 +15,7 @@ import { createAuthRouter } from "./auth.ts";
 import { createWatchlistRouter } from "./routes/watchlist.ts";
 import { createTradesRouter } from "./routes/trades.ts";
 import { createJournalsRouter } from "./routes/journals.ts";
+import { createAdminRouter } from "./routes/admin.ts";
 
 const { decode } = iconv;
 
@@ -31,11 +32,6 @@ type EastmoneyClistResp = {
   };
 };
 
-type EastmoneyKlineResp = {
-  data?: {
-    klines?: string[];
-  };
-};
 
 function previewValue(value: unknown, limit = 400) {
   if (value == null) return value;
@@ -315,51 +311,49 @@ async function fetchNewsHeadlines(limit = 10) {
   }
 }
 
-async function fetchEastmoneyKline(params: {
+type SinaKlineItem = {
+  day: string;
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+  volume: string;
+};
+
+async function fetchSinaKline(params: {
   code: string;
   period: "daily" | "weekly" | "monthly";
   count: number;
-}) {
+}): Promise<string[]> {
   const { code, period, count } = params;
-  const pure = String(code || "").toLowerCase();
-  const digits = pure.replace(/^(sh|sz|bj)/, "");
-  const market = pure.startsWith("sh") ? 1 : 0;
-  const secid = `${market}.${digits}`;
-  const kltMap: Record<string, number> = {
-    daily: 101,
-    weekly: 102,
-    monthly: 103,
+  const symbol = String(code || "").toLowerCase();
+  const scaleMap: Record<string, number> = {
+    daily: 240,
+    weekly: 1680,
+    monthly: 7200,
   };
-  const klt = kltMap[period] || 101;
+  const scale = scaleMap[period] || 240;
 
-  const url = "https://push2his.eastmoney.com/api/qt/stock/kline/get";
-  const start = logRequestStart("eastmoney:kline", { url, secid, klt, count });
+  const url =
+    "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData";
+  const start = logRequestStart("sina:kline", { url, symbol, scale, count });
   try {
-    const resp = await axios.get<EastmoneyKlineResp>(url, {
-      params: {
-        secid,
-        klt,
-        fqt: 1,
-        // 仅传 lmt 有时会返回 data:null（rc=102），加 beg/end 更稳定
-        beg: 0,
-        end: 20500101,
-        lmt: Math.min(Math.max(50, count), 500),
-        fields1: "f1,f2,f3,f4,f5,f6",
-        fields2: "f51,f52,f53,f54,f55,f56,f57,f58",
-      },
+    const resp = await axios.get<SinaKlineItem[]>(url, {
+      params: { symbol, scale, ma: "no", datalen: count },
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Referer: "https://quote.eastmoney.com/",
+        Referer: "https://finance.sina.com.cn/",
       },
       timeout: 20000,
     });
-    logRequestOk("eastmoney:kline", start, { status: resp.status });
-
-    const klines = resp.data?.data?.klines || [];
-    return klines;
+    logRequestOk("sina:kline", start, { status: resp.status });
+    const items = resp.data || [];
+    return items.map(
+      (k) => `${k.day},${k.open},${k.close},${k.high},${k.low},${k.volume}`,
+    );
   } catch (e) {
-    logRequestError("eastmoney:kline", start, e, { secid, klt, count });
+    logRequestError("sina:kline", start, e, { symbol, scale, count });
     throw e;
   }
 }
@@ -905,7 +899,7 @@ app.get("/api/kline", async (req, res) => {
   }
 
   try {
-    const raw = await fetchEastmoneyKline({
+    const raw = await fetchSinaKline({
       code,
       period:
         period === "weekly" || period === "monthly" ? (period as any) : "daily",
@@ -1026,17 +1020,19 @@ app.get("/api/streak-scan", async (req, res) => {
       percent: number;
       streak: number;
     }[] = [];
-    const concurrency = 8;
+    const concurrency = 6;
+    let emptyKlineCount = 0;
     for (let i = 0; i < allStocks.length; i += concurrency) {
       const batch = allStocks.slice(i, i + concurrency);
       const promises = batch.map(async (stock) => {
         const fullCode = codeToFullCode(stock.code);
         try {
-          const raw = await fetchEastmoneyKline({
+          const raw = await fetchSinaKline({
             code: fullCode,
             period: "daily",
             count: 15,
           });
+          if (!raw.length) emptyKlineCount++;
           const streak = calcStreak(raw);
           return {
             code: fullCode,
@@ -1046,6 +1042,7 @@ app.get("/api/streak-scan", async (req, res) => {
             streak,
           };
         } catch {
+          emptyKlineCount++;
           return {
             code: fullCode,
             name: stock.name,
@@ -1056,11 +1053,14 @@ app.get("/api/streak-scan", async (req, res) => {
         }
       });
       results.push(...(await Promise.all(promises)));
+      if (i + concurrency < allStocks.length) {
+        await new Promise((r) => setTimeout(r, 30));
+      }
     }
 
     const elapsed = ((Date.now() - startTs) / 1000).toFixed(1);
     console.log(
-      `[streak-scan] 扫描完成，${results.length} 只，耗时 ${elapsed}s`,
+      `[streak-scan] 扫描完成，${results.length} 只（${emptyKlineCount} 只无K线），耗时 ${elapsed}s`,
     );
 
     const filtered = results.filter((r) =>
@@ -1913,7 +1913,7 @@ async function fetchAshareKlineBars(
   code: string,
   count = 140,
 ): Promise<ScanBar[]> {
-  const raw = await fetchEastmoneyKline({ code, period: "daily", count });
+  const raw = await fetchSinaKline({ code, period: "daily", count });
   return (raw || [])
     .map((line) => String(line).split(","))
     .filter((arr) => arr.length >= 6)
@@ -2141,6 +2141,7 @@ app.use("/api/auth", createAuthRouter());
 app.use("/api/watchlist", createWatchlistRouter());
 app.use("/api/trades", createTradesRouter());
 app.use("/api/journals", createJournalsRouter());
+app.use("/api/admin", createAdminRouter());
 
 // Production: serve the built frontend
 const isProduction = process.env.NODE_ENV === "production";

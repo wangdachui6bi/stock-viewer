@@ -4,6 +4,7 @@ export interface User {
   id: number;
   username: string;
   nickname: string;
+  role: string;
 }
 
 export async function login(
