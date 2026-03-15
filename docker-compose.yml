@@ -20,9 +20,13 @@ services:
     #   - "traefik.http.routers.stock-viewer.entrypoints=websecure"
     #   - "traefik.http.routers.stock-viewer.tls.certresolver=letsencrypt"
     #   - "traefik.http.services.stock-viewer.loadbalancer.server.port=3001"
+    networks:
+      - infra-network
     # networks:
     #   - YOUR_TRAEFIK_NETWORK
 
-# networks:
-#   YOUR_TRAEFIK_NETWORK:
-#     external: true
+networks:
+  infra-network:
+    external: true
+# YOUR_TRAEFIK_NETWORK:
+#   external: true

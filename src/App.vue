@@ -1,5 +1,6 @@
 <template>
-  <div class="app" :class="{ h5: isH5 }">
+  <LoginPage v-if="!isAuthenticated" @success="onLoginSuccess" />
+  <div v-else class="app" :class="{ h5: isH5 }">
     <header class="header">
       <div class="header-inner">
         <div class="header-brand">
@@ -50,6 +51,21 @@
             主力资金
           </a>
         </div>
+        <el-dropdown class="user-dropdown" trigger="click" @command="handleUserCommand">
+          <div class="user-avatar-btn">
+            <el-icon size="16"><UserFilled /></el-icon>
+            <span v-if="!isH5" class="user-name">{{ currentUser?.nickname || currentUser?.username || '' }}</span>
+          </div>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item disabled>
+                <span style="color: var(--el-text-color-secondary)">{{ currentUser?.username }}</span>
+              </el-dropdown-item>
+              <el-dropdown-item divided command="changePwd">修改密码</el-dropdown-item>
+              <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </header>
     <main class="main">
@@ -300,6 +316,8 @@
                   <el-dropdown-item command="journal"
                     >复盘笔记</el-dropdown-item
                   >
+                  <el-dropdown-item divided command="trades">交易记录</el-dropdown-item>
+                  <el-dropdown-item command="savedJournals">我的笔记</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -1158,16 +1176,197 @@
       </div>
       <template #footer>
         <el-button @click="aiJournalModal = false">关闭</el-button>
+        <el-button
+          v-if="aiJournalResult"
+          type="success"
+          :loading="saveJournalLoading"
+          @click="saveAiJournalToServer"
+        >
+          保存到笔记
+        </el-button>
       </template>
+    </el-dialog>
+
+    <!-- 修改密码 -->
+    <el-dialog v-model="changePwdModal" title="修改密码" width="400px" destroy-on-close>
+      <el-form label-position="top">
+        <el-form-item label="旧密码">
+          <el-input v-model="changePwdForm.oldPassword" type="password" show-password placeholder="请输入旧密码" />
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input v-model="changePwdForm.newPassword" type="password" show-password placeholder="请输入新密码（至少6位）" />
+        </el-form-item>
+        <el-form-item label="确认新密码">
+          <el-input v-model="changePwdForm.confirmPassword" type="password" show-password placeholder="再次输入新密码" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="changePwdModal = false">取消</el-button>
+        <el-button type="primary" :loading="changePwdLoading" @click="handleChangePassword">确认修改</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 交易记录 -->
+    <el-dialog
+      v-model="tradesModal"
+      title="交易记录"
+      width="900px"
+      destroy-on-close
+      class="ai-dialog"
+    >
+      <div class="trades-toolbar">
+        <el-button type="primary" size="small" @click="openAddTrade">新增交易</el-button>
+        <el-button size="small" :loading="tradesLoading" @click="loadTrades">刷新</el-button>
+        <span class="muted" style="margin-left: 8px">共 {{ tradesList.length }} 条</span>
+      </div>
+      <el-skeleton v-if="tradesLoading && !tradesList.length" :rows="6" animated />
+      <el-empty v-else-if="!tradesList.length" description="暂无交易记录" />
+      <el-table v-else :data="tradesList" size="small" stripe max-height="480">
+        <el-table-column label="时间" width="160">
+          <template #default="{ row }">{{ formatTradeTime(row.trade_time) }}</template>
+        </el-table-column>
+        <el-table-column label="股票" min-width="120">
+          <template #default="{ row }">
+            <span>{{ row.stock_name || row.stock_code }}</span>
+            <span class="muted"> ({{ row.stock_code }})</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="方向" width="70" align="center">
+          <template #default="{ row }">
+            <span :class="row.direction === 'buy' ? 'up' : 'down'">
+              {{ row.direction === 'buy' ? '买入' : '卖出' }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="价格" width="90" align="right">
+          <template #default="{ row }">{{ Number(row.price).toFixed(2) }}</template>
+        </el-table-column>
+        <el-table-column label="数量" width="80" align="right" prop="quantity" />
+        <el-table-column label="金额" width="110" align="right">
+          <template #default="{ row }">{{ formatMoney(Number(row.amount)) }}</template>
+        </el-table-column>
+        <el-table-column label="备注" min-width="100" show-overflow-tooltip prop="notes" />
+        <el-table-column label="操作" width="70" align="center">
+          <template #default="{ row }">
+            <el-button link type="danger" size="small" @click="handleDeleteTrade(row.id)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <!-- 新增交易表单 -->
+      <el-dialog v-model="tradeFormModal" title="新增交易" width="480px" append-to-body destroy-on-close>
+        <el-form label-position="top">
+          <el-form-item label="股票代码">
+            <el-select
+              v-model="tradeForm.stockCode"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择股票 / 输入代码"
+              style="width: 100%"
+              @change="onTradeStockChange"
+            >
+              <el-option
+                v-for="item in alertStockOptions"
+                :key="item.code"
+                :label="`${item.name} (${item.code})`"
+                :value="item.code"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="方向">
+            <el-radio-group v-model="tradeForm.direction">
+              <el-radio-button value="buy">买入</el-radio-button>
+              <el-radio-button value="sell">卖出</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item label="价格">
+            <el-input-number v-model="tradeForm.price" :min="0" :step="0.01" :precision="4" controls-position="right" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="数量">
+            <el-input-number v-model="tradeForm.quantity" :min="1" :step="100" controls-position="right" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="交易时间">
+            <el-date-picker v-model="tradeForm.tradeTime" type="datetime" placeholder="选择交易时间" style="width: 100%" value-format="YYYY-MM-DD HH:mm:ss" />
+          </el-form-item>
+          <el-form-item label="备注">
+            <el-input v-model="tradeForm.notes" placeholder="可选" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="tradeFormModal = false">取消</el-button>
+          <el-button type="primary" :loading="tradeFormLoading" @click="handleAddTrade">确认</el-button>
+        </template>
+      </el-dialog>
+    </el-dialog>
+
+    <!-- 我的笔记 -->
+    <el-dialog
+      v-model="savedJournalsModal"
+      title="我的笔记"
+      width="800px"
+      destroy-on-close
+      class="ai-dialog"
+    >
+      <div class="trades-toolbar">
+        <el-button type="primary" size="small" @click="openAddJournal">新建笔记</el-button>
+        <el-button size="small" :loading="savedJournalsLoading" @click="loadSavedJournals">刷新</el-button>
+      </div>
+      <el-skeleton v-if="savedJournalsLoading && !savedJournalsList.length" :rows="6" animated />
+      <el-empty v-else-if="!savedJournalsList.length" description="暂无笔记" />
+      <div v-else class="journals-list">
+        <div v-for="j in savedJournalsList" :key="j.id" class="journal-card">
+          <div class="journal-card-head">
+            <div>
+              <b>{{ j.title || '无标题' }}</b>
+              <span v-if="j.trade_date" class="muted" style="margin-left: 8px">{{ j.trade_date }}</span>
+            </div>
+            <div>
+              <el-button link size="small" @click="openEditJournal(j)">编辑</el-button>
+              <el-button link type="danger" size="small" @click="handleDeleteJournal(j.id)">删除</el-button>
+            </div>
+          </div>
+          <div class="journal-card-tags" v-if="j.tags">
+            <el-tag v-for="tag in j.tags.split(',')" :key="tag" size="small" type="info" style="margin-right: 4px">{{ tag }}</el-tag>
+          </div>
+          <div class="journal-card-content">{{ j.content.slice(0, 200) }}{{ j.content.length > 200 ? '…' : '' }}</div>
+          <div class="journal-card-footer muted">
+            创建于 {{ formatDateTime(new Date(j.created_at).getTime()) }}
+          </div>
+        </div>
+      </div>
+
+      <!-- 新建/编辑笔记 -->
+      <el-dialog v-model="journalFormModal" :title="journalFormEditId ? '编辑笔记' : '新建笔记'" width="600px" append-to-body destroy-on-close>
+        <el-form label-position="top">
+          <el-form-item label="标题">
+            <el-input v-model="journalForm.title" placeholder="可选标题" />
+          </el-form-item>
+          <el-form-item label="日期">
+            <el-date-picker v-model="journalForm.tradeDate" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="标签（逗号分隔）">
+            <el-input v-model="journalForm.tags" placeholder="例如：复盘,策略" />
+          </el-form-item>
+          <el-form-item label="内容">
+            <el-input v-model="journalForm.content" type="textarea" :rows="12" placeholder="写点什么…" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="journalFormModal = false">取消</el-button>
+          <el-button type="primary" :loading="journalFormLoading" @click="handleSaveJournal">保存</el-button>
+        </template>
+      </el-dialog>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, computed } from "vue";
-import { ElMessage } from "element-plus";
-import { ArrowDown } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { ArrowDown, UserFilled } from "@element-plus/icons-vue";
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
+import LoginPage from "./components/LoginPage.vue";
 import StockSearch from "./components/StockSearch.vue";
 import StockTable from "./components/StockTable.vue";
 import {
@@ -1196,6 +1395,32 @@ import type {
   SortType,
 } from "./types/stock";
 import { SORT_LABELS } from "./types/stock";
+import {
+  fetchMe,
+  changePassword as changePasswordApi,
+  logout as logoutApi,
+  isLoggedIn,
+  type User,
+} from "./api/authApi";
+import {
+  fetchWatchlist,
+  addToWatchlist,
+  removeFromWatchlistByCode,
+} from "./api/watchlistApi";
+import {
+  fetchTrades as fetchTradesApi,
+  addTrade as addTradeApi,
+  deleteTrade as deleteTradeApi,
+  type Trade,
+} from "./api/tradesApi";
+import {
+  fetchJournals,
+  createJournal,
+  updateJournal,
+  deleteJournal,
+  type Journal,
+} from "./api/journalsApi";
+import { clearToken } from "./api/client";
 
 type StockGroup = {
   id: string;
@@ -1235,6 +1460,41 @@ const ALL_GROUP_ID = "__all__";
 const MARKET_INDEX_CODES = ["sh000001", "sz399001", "sz399006"];
 const ALERT_COOLDOWN = 3 * 60 * 1000;
 const AI_HISTORY_LIMIT = 20;
+
+// Auth
+const isAuthenticated = ref(false);
+const currentUser = ref<User | null>(null);
+
+// Change password
+const changePwdModal = ref(false);
+const changePwdLoading = ref(false);
+const changePwdForm = ref({ oldPassword: "", newPassword: "", confirmPassword: "" });
+
+// Trades
+const tradesModal = ref(false);
+const tradesLoading = ref(false);
+const tradesList = ref<Trade[]>([]);
+const tradeFormModal = ref(false);
+const tradeFormLoading = ref(false);
+const tradeForm = ref({
+  stockCode: "",
+  stockName: "",
+  direction: "buy" as "buy" | "sell",
+  price: 0,
+  quantity: 100,
+  tradeTime: "",
+  notes: "",
+});
+
+// Saved journals
+const savedJournalsModal = ref(false);
+const savedJournalsLoading = ref(false);
+const savedJournalsList = ref<Journal[]>([]);
+const journalFormModal = ref(false);
+const journalFormLoading = ref(false);
+const journalFormEditId = ref<number | null>(null);
+const journalForm = ref({ title: "", content: "", tradeDate: "", tags: "" });
+const saveJournalLoading = ref(false);
 
 const searchKeyword = ref("");
 const marketIndices = ref<StockItem[]>([]);
@@ -2061,6 +2321,8 @@ function handleAiCommand(command: string) {
   if (command === "sector") openAiSectorModal();
   else if (command === "screen") openAiScreenModal();
   else if (command === "journal") openAiJournalModal();
+  else if (command === "trades") openTradesModal();
+  else if (command === "savedJournals") openSavedJournalsModal();
 }
 
 function openAiSectorModal() {
@@ -2363,8 +2625,13 @@ function clearAiJournalHistory() {
   saveAiHistory();
 }
 
-function removeCode(code: string) {
+async function removeCode(code: string) {
   const lower = code.toLowerCase();
+  try {
+    await removeFromWatchlistByCode(lower);
+  } catch (e) {
+    console.error("[watchlist] remove from API failed", e);
+  }
   groups.value = groups.value.map((group) => ({
     ...group,
     codes: group.codes.filter((c) => c.toLowerCase() !== lower),
@@ -2375,7 +2642,6 @@ function removeCode(code: string) {
     delete stockPrice.value[key];
     saveStockPrice();
   }
-  // 移除该股票的 AI 分析历史
   aiAnalyzeHistory.value = aiAnalyzeHistory.value.filter(
     (item) => (item.params.stock?.code || "").toLowerCase() !== lower,
   );
@@ -2383,9 +2649,15 @@ function removeCode(code: string) {
   loadStockList();
 }
 
-function addCode(code: string) {
+async function addCode(code: string) {
   const lower = code.toLowerCase();
   if (allCodes.value.some((c) => c.toLowerCase() === lower)) return;
+  try {
+    const name = stockList.value.find((s) => s.code.toLowerCase() === lower)?.name;
+    await addToWatchlist({ stockCode: lower, stockName: name });
+  } catch (e) {
+    console.error("[watchlist] add to API failed", e);
+  }
   ensureDefaultGroup();
   let targetGroup = groups.value.find((g) => g.id === currentGroupId.value);
   if (!targetGroup || currentGroupId.value === ALL_GROUP_ID) {
@@ -2476,10 +2748,302 @@ watch(searchKeyword, (q) => {
   }
   searchTimer = setTimeout(() => onSearch(), 300);
 });
-onMounted(() => {
-  checkH5();
-  window.addEventListener("resize", checkH5);
+async function checkAuth() {
+  if (!isLoggedIn()) return;
+  try {
+    currentUser.value = await fetchMe();
+    isAuthenticated.value = true;
+  } catch {
+    clearToken();
+  }
+}
+
+function onLoginSuccess(user: User) {
+  currentUser.value = user;
+  isAuthenticated.value = true;
+  initApp();
+}
+
+function handleUserCommand(command: string) {
+  if (command === "changePwd") {
+    changePwdForm.value = { oldPassword: "", newPassword: "", confirmPassword: "" };
+    changePwdModal.value = true;
+  } else if (command === "logout") {
+    logoutApi();
+    isAuthenticated.value = false;
+    currentUser.value = null;
+    stockList.value = [];
+    groups.value = [];
+  }
+}
+
+async function handleChangePassword() {
+  const { oldPassword, newPassword, confirmPassword } = changePwdForm.value;
+  if (!oldPassword || !newPassword) {
+    ElMessage.warning("请填写所有字段");
+    return;
+  }
+  if (newPassword.length < 6) {
+    ElMessage.warning("新密码至少6位");
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    ElMessage.warning("两次输入的新密码不一致");
+    return;
+  }
+  changePwdLoading.value = true;
+  try {
+    await changePasswordApi(oldPassword, newPassword);
+    ElMessage.success("密码修改成功");
+    changePwdModal.value = false;
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || "修改失败");
+  } finally {
+    changePwdLoading.value = false;
+  }
+}
+
+// Trades management
+function openTradesModal() {
+  tradesModal.value = true;
+  loadTrades();
+}
+
+async function loadTrades() {
+  tradesLoading.value = true;
+  try {
+    tradesList.value = await fetchTradesApi({ limit: 200 });
+  } catch (e) {
+    console.error("[trades] load failed", e);
+  } finally {
+    tradesLoading.value = false;
+  }
+}
+
+function openAddTrade() {
+  tradeForm.value = {
+    stockCode: "",
+    stockName: "",
+    direction: "buy",
+    price: 0,
+    quantity: 100,
+    tradeTime: new Date().toISOString().slice(0, 19).replace("T", " "),
+    notes: "",
+  };
+  tradeFormModal.value = true;
+}
+
+function onTradeStockChange(code: string) {
+  const item = stockList.value.find((s) => s.code === code);
+  if (item) {
+    tradeForm.value.stockName = item.name;
+    tradeForm.value.price = parseFloat(item.price || "0") || 0;
+  }
+}
+
+async function handleAddTrade() {
+  const f = tradeForm.value;
+  if (!f.stockCode || !f.price || !f.quantity || !f.tradeTime) {
+    ElMessage.warning("请填写必要字段");
+    return;
+  }
+  tradeFormLoading.value = true;
+  try {
+    await addTradeApi({
+      stockCode: f.stockCode,
+      stockName: f.stockName,
+      direction: f.direction,
+      price: f.price,
+      quantity: f.quantity,
+      tradeTime: f.tradeTime,
+      notes: f.notes,
+    });
+    ElMessage.success("交易记录已添加");
+    tradeFormModal.value = false;
+    loadTrades();
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || "添加失败");
+  } finally {
+    tradeFormLoading.value = false;
+  }
+}
+
+async function handleDeleteTrade(id: number) {
+  try {
+    await ElMessageBox.confirm("确认删除此交易记录？", "提示", { type: "warning" });
+  } catch {
+    return;
+  }
+  try {
+    await deleteTradeApi(id);
+    ElMessage.success("已删除");
+    loadTrades();
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || "删除失败");
+  }
+}
+
+function formatTradeTime(t: string) {
+  if (!t) return "—";
+  const d = new Date(t);
+  if (isNaN(d.getTime())) return t;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+// Saved journals management
+function openSavedJournalsModal() {
+  savedJournalsModal.value = true;
+  loadSavedJournals();
+}
+
+async function loadSavedJournals() {
+  savedJournalsLoading.value = true;
+  try {
+    savedJournalsList.value = await fetchJournals({ limit: 100 });
+  } catch (e) {
+    console.error("[journals] load failed", e);
+  } finally {
+    savedJournalsLoading.value = false;
+  }
+}
+
+function openAddJournal() {
+  journalFormEditId.value = null;
+  journalForm.value = { title: "", content: "", tradeDate: "", tags: "" };
+  journalFormModal.value = true;
+}
+
+function openEditJournal(j: Journal) {
+  journalFormEditId.value = j.id;
+  journalForm.value = {
+    title: j.title,
+    content: j.content,
+    tradeDate: j.trade_date || "",
+    tags: j.tags || "",
+  };
+  journalFormModal.value = true;
+}
+
+async function handleSaveJournal() {
+  if (!journalForm.value.content.trim()) {
+    ElMessage.warning("内容不能为空");
+    return;
+  }
+  journalFormLoading.value = true;
+  const payload = {
+    title: journalForm.value.title,
+    content: journalForm.value.content,
+    tradeDate: journalForm.value.tradeDate || undefined,
+    tags: journalForm.value.tags ? journalForm.value.tags.split(",").map((t) => t.trim()) : undefined,
+  };
+  try {
+    if (journalFormEditId.value) {
+      await updateJournal(journalFormEditId.value, payload);
+      ElMessage.success("笔记已更新");
+    } else {
+      await createJournal(payload);
+      ElMessage.success("笔记已创建");
+    }
+    journalFormModal.value = false;
+    loadSavedJournals();
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || "保存失败");
+  } finally {
+    journalFormLoading.value = false;
+  }
+}
+
+async function handleDeleteJournal(id: number) {
+  try {
+    await ElMessageBox.confirm("确认删除此笔记？", "提示", { type: "warning" });
+  } catch {
+    return;
+  }
+  try {
+    await deleteJournal(id);
+    ElMessage.success("已删除");
+    loadSavedJournals();
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || "删除失败");
+  }
+}
+
+async function saveAiJournalToServer() {
+  if (!aiJournalResult.value) return;
+  saveJournalLoading.value = true;
+  try {
+    const recap = aiJournalResult.value.recap;
+    const plan = aiJournalResult.value.tomorrowPlan;
+    const content = [
+      `一句话：${recap.oneSentence}`,
+      "",
+      "做得好：",
+      ...(recap.whatWorked || []).map((x) => `- ${x}`),
+      "",
+      "做得差：",
+      ...(recap.whatDidnt || []).map((x) => `- ${x}`),
+      "",
+      "关键教训：",
+      ...(recap.keyLessons || []).map((x) => `- ${x}`),
+      "",
+      "明日计划：",
+      `关注：${(plan.focus || []).join("；")}`,
+      `风控：${(plan.riskControl || []).join("；")}`,
+      `If-Then：${(plan.ifThen || []).join("；")}`,
+      "",
+      `--- 原始笔记 ---`,
+      aiJournalNotes.value,
+    ].join("\n");
+    const today = new Date().toISOString().slice(0, 10);
+    await createJournal({
+      title: `复盘 ${today}`,
+      content,
+      tradeDate: today,
+      tags: ["AI复盘"],
+    });
+    ElMessage.success("已保存到笔记");
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || "保存失败");
+  } finally {
+    saveJournalLoading.value = false;
+  }
+}
+
+async function syncWatchlistFromApi() {
+  try {
+    const apiItems = await fetchWatchlist();
+    const apiCodes = apiItems.map((item) => item.stock_code.toLowerCase());
+    if (!apiCodes.length && !allCodes.value.length) return;
+
+    const groupCodes = new Set<string>();
+    groups.value.forEach((g) => g.codes.forEach((c) => groupCodes.add(c.toLowerCase())));
+
+    const orphans = apiCodes.filter((c) => !groupCodes.has(c));
+    if (orphans.length) {
+      ensureDefaultGroup();
+      groups.value[0].codes.push(...orphans);
+    }
+
+    const apiCodeSet = new Set(apiCodes);
+    groups.value = groups.value.map((g) => ({
+      ...g,
+      codes: g.codes.filter((c) => apiCodeSet.has(c.toLowerCase())),
+    }));
+    saveGroups();
+  } catch (e) {
+    console.error("[watchlist] sync from API failed", e);
+  }
+}
+
+function handleAuthExpired() {
+  isAuthenticated.value = false;
+  currentUser.value = null;
+  ElMessage.warning("登录已过期，请重新登录");
+}
+
+async function initApp() {
   loadGroups();
+  await syncWatchlistFromApi();
   loadStockPrice();
   loadAlerts();
   loadViewSettings();
@@ -2487,9 +3051,20 @@ onMounted(() => {
   updateGroupDrafts();
   loadStockList();
   loadMarketIndices();
+}
+
+onMounted(async () => {
+  checkH5();
+  window.addEventListener("resize", checkH5);
+  window.addEventListener("auth:expired", handleAuthExpired);
+  await checkAuth();
+  if (isAuthenticated.value) {
+    initApp();
+  }
 });
 onUnmounted(() => {
   window.removeEventListener("resize", checkH5);
+  window.removeEventListener("auth:expired", handleAuthExpired);
   if (realtimeTimer) {
     clearInterval(realtimeTimer);
     realtimeTimer = null;
@@ -3157,5 +3732,74 @@ onUnmounted(() => {
 .streak-scan-table .down {
   color: var(--down);
   font-weight: 600;
+}
+
+/* User dropdown */
+.user-dropdown {
+  margin-left: 0.5rem;
+}
+.user-avatar-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  color: #c7d2fe;
+  font-size: 0.85rem;
+  transition: all 0.15s;
+}
+.user-avatar-btn:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+.user-name {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Trades */
+.trades-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+/* Journals list */
+.journals-list {
+  max-height: 500px;
+  overflow-y: auto;
+}
+.journal-card {
+  padding: 1rem;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.04);
+  border: 1px solid rgba(99, 102, 241, 0.1);
+  margin-bottom: 0.75rem;
+}
+.journal-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.journal-card-tags {
+  margin-bottom: 0.4rem;
+}
+.journal-card-content {
+  font-size: 0.875rem;
+  color: #94a3b8;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.journal-card-footer {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
 }
 </style>

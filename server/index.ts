@@ -10,6 +10,11 @@ import axios from "axios";
 import iconv from "iconv-lite";
 import JSON5 from "json5";
 import { parseSinaStockResponse, parseTencentHKResponse } from "./parser.ts";
+import { initDatabase } from "./db.ts";
+import { createAuthRouter } from "./auth.ts";
+import { createWatchlistRouter } from "./routes/watchlist.ts";
+import { createTradesRouter } from "./routes/trades.ts";
+import { createJournalsRouter } from "./routes/journals.ts";
 
 const { decode } = iconv;
 
@@ -931,17 +936,6 @@ app.get("/api/kline", async (req, res) => {
 });
 
 // 全 A 股连涨/连跌扫描（带服务端缓存）
-let streakScanCache: {
-  ts: number;
-  data: {
-    code: string;
-    name: string;
-    price: number;
-    percent: number;
-    streak: number;
-  }[];
-} | null = null;
-const STREAK_CACHE_TTL = 30 * 60 * 1000;
 let streakScanRunning = false;
 
 function codeToFullCode(rawCode: string): string {
@@ -982,20 +976,6 @@ app.get("/api/streak-scan", async (req, res) => {
   const direction = String(req.query.direction || "down");
   const minDays = Math.max(2, Math.min(Number(req.query.minDays) || 3, 30));
 
-  if (streakScanCache && Date.now() - streakScanCache.ts < STREAK_CACHE_TTL) {
-    const filtered = streakScanCache.data.filter((r) =>
-      direction === "down" ? r.streak <= -minDays : r.streak >= minDays,
-    );
-    filtered.sort((a, b) =>
-      direction === "down" ? a.streak - b.streak : b.streak - a.streak,
-    );
-    return res.json({
-      cached: true,
-      total: streakScanCache.data.length,
-      results: filtered,
-    });
-  }
-
   if (streakScanRunning) {
     return res
       .status(202)
@@ -1007,15 +987,15 @@ app.get("/api/streak-scan", async (req, res) => {
   console.log("[streak-scan] 开始全 A 股扫描...");
 
   try {
-    const pages = 5;
-    const perPage = 500;
+    const perPage = 5000;
+    const maxPages = 5;
     const allStocks: {
       code: string;
       name: string;
       price: number;
       percent: number;
     }[] = [];
-    for (let p = 1; p <= pages; p++) {
+    for (let p = 1; p <= maxPages; p++) {
       const diff = await fetchEastmoneyClist({
         pn: p,
         pz: perPage,
@@ -1039,9 +1019,13 @@ app.get("/api/streak-scan", async (req, res) => {
       `[streak-scan] 获取 ${allStocks.length} 只 A 股，开始拉取 K 线...`,
     );
 
-    const results: typeof streakScanCache extends null
-      ? never
-      : NonNullable<typeof streakScanCache>["data"] = [];
+    const results: {
+      code: string;
+      name: string;
+      price: number;
+      percent: number;
+      streak: number;
+    }[] = [];
     const concurrency = 8;
     for (let i = 0; i < allStocks.length; i += concurrency) {
       const batch = allStocks.slice(i, i + concurrency);
@@ -1074,7 +1058,6 @@ app.get("/api/streak-scan", async (req, res) => {
       results.push(...(await Promise.all(promises)));
     }
 
-    streakScanCache = { ts: Date.now(), data: results };
     const elapsed = ((Date.now() - startTs) / 1000).toFixed(1);
     console.log(
       `[streak-scan] 扫描完成，${results.length} 只，耗时 ${elapsed}s`,
@@ -2153,6 +2136,12 @@ app.post("/api/ai/a/pullback", async (req, res) => {
     res.status(500).json({ error: message });
   }
 });
+// ===== 用户系统 & 数据持久化路由 =====
+app.use("/api/auth", createAuthRouter());
+app.use("/api/watchlist", createWatchlistRouter());
+app.use("/api/trades", createTradesRouter());
+app.use("/api/journals", createJournalsRouter());
+
 // Production: serve the built frontend
 const isProduction = process.env.NODE_ENV === "production";
 if (isProduction) {
@@ -2163,8 +2152,19 @@ if (isProduction) {
   });
 }
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(
-    `Stock API ${isProduction ? "(production)" : "(dev)"}: http://localhost:${PORT}`,
-  );
-});
+async function start() {
+  try {
+    await initDatabase();
+    console.log("[db] MySQL connected & tables ready");
+  } catch (e) {
+    console.error("[db] MySQL init failed, running without database:", e instanceof Error ? e.message : e);
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(
+      `Stock API ${isProduction ? "(production)" : "(dev)"}: http://localhost:${PORT}`,
+    );
+  });
+}
+
+start();
