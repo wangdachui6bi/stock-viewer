@@ -3,30 +3,29 @@ services:
     build: .
     container_name: stock-viewer
     restart: unless-stopped
-    ports:
-      - "3001:3001"
     env_file:
       - .env.local
     environment:
       - NODE_ENV=production
-    # ---------------------------------------------------
-    # 后续接入 Traefik + 域名时，取消下面注释，
-    # 把 YOUR_TRAEFIK_NETWORK 换成实际网络名，把域名改对
-    # 然后删掉上面的 ports 映射即可
-    # ---------------------------------------------------
-    # labels:
-    #   - "traefik.enable=true"
-    #   - "traefik.http.routers.stock-viewer.rule=Host(`stock.yourdomain.com`)"
-    #   - "traefik.http.routers.stock-viewer.entrypoints=websecure"
-    #   - "traefik.http.routers.stock-viewer.tls.certresolver=letsencrypt"
-    #   - "traefik.http.services.stock-viewer.loadbalancer.server.port=3001"
+    labels:
+      - "traefik.enable=true"
+      # HTTPS
+      - "traefik.http.routers.stock-viewer.rule=Host(`stock.wkaiys.top`)"
+      - "traefik.http.routers.stock-viewer.entrypoints=websecure"
+      - "traefik.http.routers.stock-viewer.tls.certresolver=myresolver"
+      - "traefik.http.services.stock-viewer.loadbalancer.server.port=3001"
+      # HTTP -> HTTPS redirect
+      - "traefik.http.routers.stock-viewer-http.rule=Host(`stock.wkaiys.top`)"
+      - "traefik.http.routers.stock-viewer-http.entrypoints=web"
+      - "traefik.http.routers.stock-viewer-http.middlewares=stock-viewer-redirect"
+      - "traefik.http.middlewares.stock-viewer-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.stock-viewer-redirect.redirectscheme.permanent=true"
     networks:
+      - gateway-network
       - infra-network
-    # networks:
-    #   - YOUR_TRAEFIK_NETWORK
 
 networks:
+  gateway-network:
+    external: true
   infra-network:
     external: true
-# YOUR_TRAEFIK_NETWORK:
-#   external: true

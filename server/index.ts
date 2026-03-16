@@ -311,49 +311,47 @@ async function fetchNewsHeadlines(limit = 10) {
   }
 }
 
-type SinaKlineItem = {
-  day: string;
-  open: string;
-  high: string;
-  low: string;
-  close: string;
-  volume: string;
+type TencentKlineResp = {
+  code: number;
+  data: Record<
+    string,
+    { day?: string[][]; qfqday?: string[][] }
+  >;
 };
 
-async function fetchSinaKline(params: {
+async function fetchKline(params: {
   code: string;
   period: "daily" | "weekly" | "monthly";
   count: number;
 }): Promise<string[]> {
   const { code, period, count } = params;
   const symbol = String(code || "").toLowerCase();
-  const scaleMap: Record<string, number> = {
-    daily: 240,
-    weekly: 1680,
-    monthly: 7200,
+  const periodMap: Record<string, string> = {
+    daily: "day",
+    weekly: "week",
+    monthly: "month",
   };
-  const scale = scaleMap[period] || 240;
+  const p = periodMap[period] || "day";
 
-  const url =
-    "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData";
-  const start = logRequestStart("sina:kline", { url, symbol, scale, count });
+  const url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get";
+  const param = `${symbol},${p},,,${count},qfq`;
+  const start = logRequestStart("tencent:kline", { url, param });
   try {
-    const resp = await axios.get<SinaKlineItem[]>(url, {
-      params: { symbol, scale, ma: "no", datalen: count },
+    const resp = await axios.get<TencentKlineResp>(url, {
+      params: { param },
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Referer: "https://finance.sina.com.cn/",
+        Referer: "https://web.ifzq.gtimg.cn/",
       },
-      timeout: 20000,
+      timeout: 15000,
     });
-    logRequestOk("sina:kline", start, { status: resp.status });
-    const items = resp.data || [];
-    return items.map(
-      (k) => `${k.day},${k.open},${k.close},${k.high},${k.low},${k.volume}`,
-    );
+    logRequestOk("tencent:kline", start, { status: resp.status });
+    const stockData = resp.data?.data?.[symbol];
+    const bars = stockData?.day || stockData?.qfqday || [];
+    return bars.map((b) => b.join(","));
   } catch (e) {
-    logRequestError("sina:kline", start, e, { symbol, scale, count });
+    logRequestError("tencent:kline", start, e, { symbol });
     throw e;
   }
 }
@@ -899,7 +897,7 @@ app.get("/api/kline", async (req, res) => {
   }
 
   try {
-    const raw = await fetchSinaKline({
+    const raw = await fetchKline({
       code,
       period:
         period === "weekly" || period === "monthly" ? (period as any) : "daily",
@@ -929,7 +927,74 @@ app.get("/api/kline", async (req, res) => {
   }
 });
 
-// 全 A 股连涨/连跌扫描（带服务端缓存）
+// --- helpers: retry + A-share list cache ---
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries = 3,
+  baseDelay = 1000,
+): Promise<T> {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i === retries) throw e;
+      const delay = baseDelay * Math.pow(2, i);
+      console.log(`[retry] attempt ${i + 1} failed, retrying in ${delay}ms...`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw new Error("unreachable");
+}
+
+type AShareItem = { code: string; name: string; price: number; percent: number };
+let ashareListCache: { ts: number; data: AShareItem[] } | null = null;
+const ASHARE_CACHE_TTL = 60 * 60 * 1000; // 1h
+
+async function fetchAllAshares(): Promise<AShareItem[]> {
+  if (ashareListCache && Date.now() - ashareListCache.ts < ASHARE_CACHE_TTL) {
+    console.log(`[ashare-list] 使用缓存 (${ashareListCache.data.length} 只)`);
+    return ashareListCache.data;
+  }
+
+  const perPage = 100;
+  const maxTotal = 8000;
+  const all: AShareItem[] = [];
+
+  for (let p = 1; all.length < maxTotal; p++) {
+    const diff = await withRetry(() =>
+      fetchEastmoneyClist({
+        pn: p,
+        pz: perPage,
+        po: 1,
+        np: 1,
+        fltt: 2,
+        invt: 2,
+        fid: "f3",
+        fs: mapAshareMarketFs(),
+        fields: "f12,f14,f2,f3",
+      }),
+    );
+    if (!diff.length) break;
+    for (const x of diff) {
+      const code = String(x.f12 || "").toLowerCase();
+      const name = String(x.f14 || "");
+      if (!code || !name) continue;
+      all.push({ code, name, price: x.f2, percent: x.f3 });
+    }
+    if (diff.length < perPage) break;
+    if (p % 10 === 0) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+
+  if (all.length > 100) {
+    ashareListCache = { ts: Date.now(), data: all };
+  }
+  return all;
+}
+
+// 全 A 股连涨/连跌扫描
 let streakScanRunning = false;
 
 function codeToFullCode(rawCode: string): string {
@@ -981,38 +1046,18 @@ app.get("/api/streak-scan", async (req, res) => {
   console.log("[streak-scan] 开始全 A 股扫描...");
 
   try {
-    const perPage = 5000;
-    const maxPages = 5;
-    const allStocks: {
-      code: string;
-      name: string;
-      price: number;
-      percent: number;
-    }[] = [];
-    for (let p = 1; p <= maxPages; p++) {
-      const diff = await fetchEastmoneyClist({
-        pn: p,
-        pz: perPage,
-        po: 1,
-        np: 1,
-        fltt: 2,
-        invt: 2,
-        fid: "f6",
-        fs: mapAshareMarketFs(),
-        fields: "f12,f14,f2,f3",
-      });
-      for (const x of diff) {
-        const code = String(x.f12 || "").toLowerCase();
-        const name = String(x.f14 || "");
-        if (!code || !name) continue;
-        allStocks.push({ code, name, price: x.f2, percent: x.f3 });
-      }
-      if (diff.length < perPage) break;
-    }
+    // 1. 拉取全部 A 股（带缓存 + 重试）
+    const allStocks = await fetchAllAshares();
+
+    // 2. 按方向预过滤：连涨只看今日涨的，连跌只看今日跌的
+    const candidates = allStocks.filter((s) =>
+      direction === "down" ? s.percent < 0 : s.percent > 0,
+    );
     console.log(
-      `[streak-scan] 获取 ${allStocks.length} 只 A 股，开始拉取 K 线...`,
+      `[streak-scan] 获取 ${allStocks.length} 只 A 股，方向=${direction}，预过滤后 ${candidates.length} 只，开始拉取 K 线...`,
     );
 
+    // 3. 并发拉取 K 线，自适应降速
     const results: {
       code: string;
       name: string;
@@ -1020,41 +1065,56 @@ app.get("/api/streak-scan", async (req, res) => {
       percent: number;
       streak: number;
     }[] = [];
-    const concurrency = 6;
+    let concurrency = 15;
     let emptyKlineCount = 0;
-    for (let i = 0; i < allStocks.length; i += concurrency) {
-      const batch = allStocks.slice(i, i + concurrency);
-      const promises = batch.map(async (stock) => {
-        const fullCode = codeToFullCode(stock.code);
-        try {
-          const raw = await fetchSinaKline({
-            code: fullCode,
-            period: "daily",
-            count: 15,
-          });
-          if (!raw.length) emptyKlineCount++;
-          const streak = calcStreak(raw);
-          return {
-            code: fullCode,
-            name: stock.name,
-            price: stock.price,
-            percent: stock.percent,
-            streak,
-          };
-        } catch {
-          emptyKlineCount++;
-          return {
-            code: fullCode,
-            name: stock.name,
-            price: stock.price,
-            percent: stock.percent,
-            streak: 0,
-          };
-        }
-      });
-      results.push(...(await Promise.all(promises)));
-      if (i + concurrency < allStocks.length) {
-        await new Promise((r) => setTimeout(r, 30));
+    let consecutiveErrors = 0;
+    for (let i = 0; i < candidates.length; i += concurrency) {
+      const batch = candidates.slice(i, i + concurrency);
+      const batchResults = await Promise.all(
+        batch.map(async (stock) => {
+          const fullCode = codeToFullCode(stock.code);
+          try {
+            const raw = await fetchKline({
+              code: fullCode,
+              period: "daily",
+              count: 15,
+            });
+            if (!raw.length) {
+              emptyKlineCount++;
+              consecutiveErrors++;
+            } else {
+              consecutiveErrors = 0;
+            }
+            return {
+              code: fullCode,
+              name: stock.name,
+              price: stock.price,
+              percent: stock.percent,
+              streak: calcStreak(raw),
+            };
+          } catch {
+            emptyKlineCount++;
+            consecutiveErrors++;
+            return {
+              code: fullCode,
+              name: stock.name,
+              price: stock.price,
+              percent: stock.percent,
+              streak: 0,
+            };
+          }
+        }),
+      );
+      results.push(...batchResults);
+
+      // adaptive: if many consecutive errors, slow down
+      if (consecutiveErrors > 30) {
+        concurrency = Math.max(3, concurrency - 2);
+        await new Promise((r) => setTimeout(r, 500));
+        consecutiveErrors = 0;
+        console.log(
+          `[streak-scan] 检测到大量失败，降速至并发 ${concurrency}`,
+        );
       }
     }
 
@@ -1069,7 +1129,7 @@ app.get("/api/streak-scan", async (req, res) => {
     filtered.sort((a, b) =>
       direction === "down" ? a.streak - b.streak : b.streak - a.streak,
     );
-    res.json({ cached: false, total: results.length, results: filtered });
+    res.json({ cached: false, total: allStocks.length, results: filtered });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error("[streak-scan] 扫描失败:", message);
@@ -1913,7 +1973,7 @@ async function fetchAshareKlineBars(
   code: string,
   count = 140,
 ): Promise<ScanBar[]> {
-  const raw = await fetchSinaKline({ code, period: "daily", count });
+  const raw = await fetchKline({ code, period: "daily", count });
   return (raw || [])
     .map((line) => String(line).split(","))
     .filter((arr) => arr.length >= 6)
