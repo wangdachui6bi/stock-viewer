@@ -16,6 +16,8 @@ import { createWatchlistRouter } from "./routes/watchlist.ts";
 import { createTradesRouter } from "./routes/trades.ts";
 import { createJournalsRouter } from "./routes/journals.ts";
 import { createAdminRouter } from "./routes/admin.ts";
+import { createSimulationRouter } from "./routes/simulation.ts";
+import { startSimulationScheduler } from "./simulator.ts";
 
 const { decode } = iconv;
 
@@ -2202,6 +2204,7 @@ app.use("/api/watchlist", createWatchlistRouter());
 app.use("/api/trades", createTradesRouter());
 app.use("/api/journals", createJournalsRouter());
 app.use("/api/admin", createAdminRouter());
+app.use("/api/simulation", createSimulationRouter());
 
 // Production: serve the built frontend
 const isProduction = process.env.NODE_ENV === "production";
@@ -2225,6 +2228,7 @@ async function start() {
     console.log(
       `Stock API ${isProduction ? "(production)" : "(dev)"}: http://localhost:${PORT}`,
     );
+    startSimulationScheduler();
   });
 }
 

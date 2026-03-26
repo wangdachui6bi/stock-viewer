@@ -318,6 +318,7 @@
                   <el-dropdown-item command="journal"
                     >复盘笔记</el-dropdown-item
                   >
+                  <el-dropdown-item command="simulation">模拟盘策略</el-dropdown-item>
                   <el-dropdown-item divided command="trades">交易记录</el-dropdown-item>
                   <el-dropdown-item command="savedJournals">我的笔记</el-dropdown-item>
                 </el-dropdown-menu>
@@ -1360,6 +1361,7 @@
         </template>
       </el-dialog>
     </el-dialog>
+    <SimulationLabDialog v-model="simulationModal" />
   </div>
 </template>
 
@@ -1371,6 +1373,7 @@ import { ArrowDown, UserFilled } from "@element-plus/icons-vue";
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 import StockSearch from "@/components/StockSearch.vue";
 import StockTable from "@/components/StockTable.vue";
+import SimulationLabDialog from "@/components/SimulationLabDialog.vue";
 import {
   fetchStockList,
   searchStock,
@@ -1602,6 +1605,7 @@ const aiScreenHistory = ref<
     { query: string; limit: number; horizon: string; riskProfile: string }
   >[]
 >([]);
+const simulationModal = ref(false);
 
 // AI · 复盘笔记
 const aiJournalModal = ref(false);
@@ -2323,6 +2327,7 @@ function handleAiCommand(command: string) {
   if (command === "sector") openAiSectorModal();
   else if (command === "screen") openAiScreenModal();
   else if (command === "journal") openAiJournalModal();
+  else if (command === "simulation") simulationModal.value = true;
   else if (command === "trades") openTradesModal();
   else if (command === "savedJournals") openSavedJournalsModal();
 }
