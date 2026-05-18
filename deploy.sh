@@ -17,11 +17,10 @@ rsync -avz --delete \
   --exclude node_modules \
   --exclude dist \
   --exclude .git \
-  --exclude .env.local \
   --exclude '*.log' \
   ./ "$SERVER:$DEPLOY_PATH/"
 
 echo "==> 构建并启动"
-ssh "$SERVER" "cd $DEPLOY_PATH && docker compose up -d --build --remove-orphans && docker image prune -f"
+ssh "$SERVER" "cd $DEPLOY_PATH && docker compose down && docker compose up -d --build --remove-orphans && docker image prune -f && docker compose ps"
 
 echo "==> 完成！"

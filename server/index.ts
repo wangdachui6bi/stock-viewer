@@ -317,7 +317,14 @@ type TencentKlineResp = {
   code: number;
   data: Record<
     string,
-    { day?: string[][]; qfqday?: string[][] }
+    {
+      day?: string[][];
+      qfqday?: string[][];
+      week?: string[][];
+      qfqweek?: string[][];
+      month?: string[][];
+      qfqmonth?: string[][];
+    }
   >;
 };
 
@@ -350,10 +357,408 @@ async function fetchKline(params: {
     });
     logRequestOk("tencent:kline", start, { status: resp.status });
     const stockData = resp.data?.data?.[symbol];
-    const bars = stockData?.day || stockData?.qfqday || [];
+    const bars =
+      period === "weekly"
+        ? stockData?.qfqweek || stockData?.week || []
+        : period === "monthly"
+          ? stockData?.qfqmonth || stockData?.month || []
+          : stockData?.day || stockData?.qfqday || [];
     return bars.map((b) => b.join(","));
   } catch (e) {
     logRequestError("tencent:kline", start, e, { symbol });
+    throw e;
+  }
+}
+
+type Mt4Bar = {
+  ts: number;
+  date: string;
+  open: number;
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+  amount?: number;
+};
+
+type Mt4Signal = {
+  bias: "bullish" | "neutral" | "bearish";
+  regime: "trend-up" | "range" | "trend-down";
+  setup: string;
+  score: number;
+  summary: string;
+  reasons: string[];
+  riskLabel: "aggressive" | "balanced" | "defensive";
+  indicators: {
+    ma5: number;
+    ma10: number;
+    ma20: number;
+    ma60: number;
+    rsi14: number;
+    atr14: number;
+    macdDiff: number;
+    macdDea: number;
+    macdHist: number;
+    avgVolume20: number;
+  };
+  levels: {
+    entryLow: number;
+    entryHigh: number;
+    stop: number;
+    take1: number;
+    take2: number;
+  };
+};
+
+function parseKlineRows(raw: string[]): Mt4Bar[] {
+  return raw
+    .map((line) => String(line).split(","))
+    .filter((arr) => arr.length >= 6)
+    .map((arr) => {
+      const date = arr[0];
+      const open = Number(arr[1]);
+      const close = Number(arr[2]);
+      const high = Number(arr[3]);
+      const low = Number(arr[4]);
+      const volume = Number(arr[5]);
+      const amount = arr[6] != null ? Number(arr[6]) : undefined;
+      const ts = Date.parse(date + "T00:00:00+08:00");
+      return { ts, date, open, close, high, low, volume, amount };
+    })
+    .filter((b) => Number.isFinite(b.ts) && Number.isFinite(b.close));
+}
+
+function round(value: number, digits = 2) {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function mt4Sma(values: number[], period: number) {
+  if (values.length < period) return values[values.length - 1] ?? 0;
+  const slice = values.slice(-period);
+  return slice.reduce((sum, item) => sum + item, 0) / period;
+}
+
+function mt4Ema(values: number[], period: number) {
+  if (!values.length) return 0;
+  const multiplier = 2 / (period + 1);
+  let prev = values[0];
+  for (let i = 1; i < values.length; i += 1) {
+    prev = (values[i] - prev) * multiplier + prev;
+  }
+  return prev;
+}
+
+function mt4CalcRsi(values: number[], period = 14) {
+  if (values.length <= period) return 50;
+  let gains = 0;
+  let losses = 0;
+  for (let i = values.length - period; i < values.length; i += 1) {
+    const delta = values[i] - values[i - 1];
+    if (delta >= 0) gains += delta;
+    else losses += Math.abs(delta);
+  }
+  if (losses === 0) return 100;
+  const rs = gains / period / (losses / period);
+  return 100 - 100 / (1 + rs);
+}
+
+function mt4CalcAtr(bars: Mt4Bar[], period = 14) {
+  if (bars.length <= period) return 0;
+  const trs: number[] = [];
+  for (let i = 1; i < bars.length; i += 1) {
+    const current = bars[i];
+    const prev = bars[i - 1];
+    const tr = Math.max(
+      current.high - current.low,
+      Math.abs(current.high - prev.close),
+      Math.abs(current.low - prev.close),
+    );
+    trs.push(tr);
+  }
+  return mt4Sma(trs, period);
+}
+
+function mt4CalcMacd(values: number[]) {
+  const diff = mt4Ema(values, 12) - mt4Ema(values, 26);
+  const diffs: number[] = [];
+  for (let i = 0; i < values.length; i += 1) {
+    const sample = values.slice(0, i + 1);
+    diffs.push(mt4Ema(sample, 12) - mt4Ema(sample, 26));
+  }
+  const dea = mt4Ema(diffs, 9);
+  const hist = diff - dea;
+  return { diff, dea, hist };
+}
+
+function analyzeMt4Bars(bars: Mt4Bar[]): Mt4Signal {
+  if (bars.length < 60) {
+    throw new Error("K线数量不足，无法生成稳定分析");
+  }
+
+  const closes = bars.map((item) => item.close);
+  const last = bars[bars.length - 1];
+  const ma5 = mt4Sma(closes, 5);
+  const ma10 = mt4Sma(closes, 10);
+  const ma20 = mt4Sma(closes, 20);
+  const ma60 = mt4Sma(closes, 60);
+  const rsi14 = mt4CalcRsi(closes, 14);
+  const atr14 = mt4CalcAtr(bars, 14);
+  const macd = mt4CalcMacd(closes);
+  const avgVolume20 = mt4Sma(
+    bars.slice(-20).map((item) => item.volume || 0),
+    Math.min(20, bars.length),
+  );
+
+  const aboveMa20 = last.close > ma20;
+  const aboveMa60 = last.close > ma60;
+  const trendUp = aboveMa20 && ma20 >= ma60;
+  const trendDown = !aboveMa20 && !aboveMa60 && ma20 <= ma60;
+  const distanceToMa20 = atr14 ? Math.abs(last.close - ma20) / atr14 : 0;
+  const volumePulse = avgVolume20 ? last.volume / avgVolume20 : 1;
+
+  let score = 48;
+  const reasons: string[] = [];
+
+  if (trendUp) {
+    score += 18;
+    reasons.push("价格站上 MA20，且 MA20 对 MA60 保持顺上，主趋势仍偏多。");
+  } else if (trendDown) {
+    score -= 18;
+    reasons.push("价格位于 MA20/MA60 下方，结构偏弱，追高性价比差。");
+  } else {
+    reasons.push("当前处于均线缠绕区，适合等待更明确的结构确认。");
+  }
+
+  if (macd.hist > 0) {
+    score += 10;
+    reasons.push("MACD 柱体为正，动能并未完全熄火。");
+  } else {
+    score -= 6;
+    reasons.push("MACD 柱体回落，短线节奏更适合控仓观察。");
+  }
+
+  if (rsi14 >= 48 && rsi14 <= 68) {
+    score += 10;
+    reasons.push("RSI 位于可进攻区间，既不钝化也不失速。");
+  } else if (rsi14 > 75) {
+    score -= 8;
+    reasons.push("RSI 偏热，追涨回撤风险抬升。");
+  } else if (rsi14 < 40) {
+    score -= 10;
+    reasons.push("RSI 仍弱，右侧交易信号不足。");
+  }
+
+  if (distanceToMa20 <= 1.1 && trendUp) {
+    score += 9;
+    reasons.push("价格离 MA20 不远，属于交易员容易执行的回踩带。");
+  } else if (distanceToMa20 >= 2.4) {
+    score -= 7;
+    reasons.push("价格偏离 MA20 过大，更像情绪延伸而不是舒服的入场位。");
+  }
+
+  if (volumePulse >= 1.15) {
+    score += 6;
+    reasons.push("量能高于 20 日均量，说明关注度仍在。");
+  }
+
+  score = Math.max(8, Math.min(96, score));
+
+  let bias: Mt4Signal["bias"] = "neutral";
+  let regime: Mt4Signal["regime"] = "range";
+  let setup = "Wait For Clarity";
+  let summary = "结构还不够干净，先看再上";
+  let riskLabel: Mt4Signal["riskLabel"] = "balanced";
+
+  if (trendUp && score >= 72) {
+    bias = "bullish";
+    regime = "trend-up";
+    setup = "Trend Pullback";
+    summary = "顺势回踩，可分批试错";
+    riskLabel = distanceToMa20 <= 1.2 ? "balanced" : "aggressive";
+  } else if (trendDown && score <= 32) {
+    bias = "bearish";
+    regime = "trend-down";
+    setup = "Capital Preservation";
+    summary = "弱势结构，防守优先";
+    riskLabel = "defensive";
+  } else if (score >= 58) {
+    bias = "neutral";
+    regime = trendUp ? "trend-up" : "range";
+    setup = "Watch Break";
+    summary = "接近可交易区，等进一步确认";
+    riskLabel = "balanced";
+  } else {
+    bias = trendDown ? "bearish" : "neutral";
+    regime = trendDown ? "trend-down" : "range";
+    setup = "Hands Off";
+    summary = "信号不完整，耐心比动作更重要";
+    riskLabel = "defensive";
+  }
+
+  const entryAnchorLow = trendUp
+    ? Math.min(ma10, ma20)
+    : Math.min(last.close, ma20);
+  const entryAnchorHigh = trendUp
+    ? Math.max(ma10, ma5)
+    : Math.max(last.close, ma10);
+  const stop = trendUp
+    ? Math.min(ma20 - atr14 * 1.2, last.low - atr14 * 0.35)
+    : Math.min(last.close, ma20) - atr14 * 1.1;
+  const take1 = last.close + atr14 * (trendUp ? 1.2 : 0.8);
+  const take2 = last.close + atr14 * (trendUp ? 2.1 : 1.2);
+
+  return {
+    bias,
+    regime,
+    setup,
+    score: round(score, 0),
+    summary,
+    reasons,
+    riskLabel,
+    indicators: {
+      ma5: round(ma5),
+      ma10: round(ma10),
+      ma20: round(ma20),
+      ma60: round(ma60),
+      rsi14: round(rsi14, 1),
+      atr14: round(atr14),
+      macdDiff: round(macd.diff, 3),
+      macdDea: round(macd.dea, 3),
+      macdHist: round(macd.hist, 3),
+      avgVolume20: round(avgVolume20, 0),
+    },
+    levels: {
+      entryLow: round(entryAnchorLow),
+      entryHigh: round(entryAnchorHigh),
+      stop: round(stop),
+      take1: round(take1),
+      take2: round(take2),
+    },
+  };
+}
+
+function toMt4Symbol(code: string) {
+  const normalized = code.toLowerCase();
+  if (normalized.startsWith("sh")) return `ASH${normalized.slice(2)}`.slice(0, 12);
+  if (normalized.startsWith("sz")) return `ASZ${normalized.slice(2)}`.slice(0, 12);
+  if (normalized.startsWith("bj")) return `ABJ${normalized.slice(2)}`.slice(0, 12);
+  return `AST${normalized.replace(/[^a-z0-9]/g, "").slice(0, 9)}`.slice(0, 12);
+}
+
+function inferDigits(price: number) {
+  const text = price.toFixed(3);
+  if (text.endsWith("000")) return 0;
+  if (text.endsWith("00")) return 1;
+  if (text.endsWith("0")) return 2;
+  return 3;
+}
+
+function timeframeToMinutes(period: "D1" | "W1" | "MN1") {
+  if (period === "W1") return 10080;
+  if (period === "MN1") return 43200;
+  return 1440;
+}
+
+function buildMt4Csv(bars: Mt4Bar[]) {
+  const header = "DATE,TIME,OPEN,HIGH,LOW,CLOSE,VOLUME";
+  const rows = bars.map((bar) =>
+    [
+      bar.date.replace(/-/g, "."),
+      "00:00",
+      bar.open.toFixed(3),
+      bar.high.toFixed(3),
+      bar.low.toFixed(3),
+      bar.close.toFixed(3),
+      Math.round(bar.volume || 0),
+    ].join(","),
+  );
+  return [header, ...rows].join("\n");
+}
+
+function buildHstFile(params: {
+  symbol: string;
+  period: "D1" | "W1" | "MN1";
+  digits: number;
+  bars: Mt4Bar[];
+}) {
+  const { symbol, period, digits, bars } = params;
+  const headerBytes = 148;
+  const recordBytes = 60;
+  const buffer = Buffer.alloc(headerBytes + bars.length * recordBytes);
+  let offset = 0;
+  const writeFixedText = (value: string, length: number) => {
+    const text = Buffer.from(value, "ascii");
+    text.copy(buffer, offset, 0, Math.min(length, text.length));
+    offset += length;
+  };
+
+  buffer.writeInt32LE(401, offset);
+  offset += 4;
+  writeFixedText("Copyright 2003-2026, MetaQuotes Software Corp.", 64);
+  writeFixedText(symbol, 12);
+  buffer.writeInt32LE(timeframeToMinutes(period), offset);
+  offset += 4;
+  buffer.writeInt32LE(digits, offset);
+  offset += 4;
+  const now = Math.floor(Date.now() / 1000);
+  buffer.writeInt32LE(now, offset);
+  offset += 4;
+  buffer.writeInt32LE(now, offset);
+  offset += 4;
+  offset += 52;
+
+  for (const bar of bars) {
+    buffer.writeBigInt64LE(BigInt(Math.floor(bar.ts / 1000)), offset);
+    offset += 8;
+    buffer.writeDoubleLE(bar.open, offset);
+    offset += 8;
+    buffer.writeDoubleLE(bar.high, offset);
+    offset += 8;
+    buffer.writeDoubleLE(bar.low, offset);
+    offset += 8;
+    buffer.writeDoubleLE(bar.close, offset);
+    offset += 8;
+    buffer.writeBigInt64LE(BigInt(Math.round(bar.volume || 0)), offset);
+    offset += 8;
+    buffer.writeInt32LE(0, offset);
+    offset += 4;
+    buffer.writeBigInt64LE(BigInt(Math.round(bar.volume || 0)), offset);
+    offset += 8;
+  }
+
+  return buffer;
+}
+
+async function fetchSingleAshareQuote(code: string) {
+  const url = `https://hq.sinajs.cn/list=${code.replace(".", "$")}`;
+  const start = logRequestStart("sina:stock:single", { url, code });
+  try {
+    const resp = await axios.get(url, {
+      responseType: "arraybuffer",
+      headers: randHeader(),
+    });
+    logRequestOk("sina:stock:single", start, { status: resp.status });
+    const body = decode(Buffer.from(resp.data), "GB18030");
+    const list = parseSinaStockResponse(body, [code]);
+    const item = Array.isArray(list) ? list[0] : null;
+    if (!item) throw new Error(`未取到 ${code} 的行情`);
+    return {
+      code: String(item.code || code).toLowerCase(),
+      name: String(item.name || code),
+      market: String(item.type || "a"),
+      price: Number(item.price || 0),
+      open: Number(item.open || 0),
+      high: Number(item.high || 0),
+      low: Number(item.low || 0),
+      prevClose: Number(item.yestclose || 0),
+      percent: Number(String(item.percent || 0).replace("%", "")),
+      volume: Number(item.volume || 0),
+      amount: Number(item.amount || 0),
+      time: String(item.time || ""),
+    };
+  } catch (e) {
+    logRequestError("sina:stock:single", start, e, { url, code });
     throw e;
   }
 }
@@ -905,25 +1310,162 @@ app.get("/api/kline", async (req, res) => {
         period === "weekly" || period === "monthly" ? (period as any) : "daily",
       count,
     });
-
-    const bars = raw
-      .map((line) => String(line).split(","))
-      .filter((arr) => arr.length >= 6)
-      .map((arr) => {
-        const date = arr[0];
-        const open = Number(arr[1]);
-        const close = Number(arr[2]);
-        const high = Number(arr[3]);
-        const low = Number(arr[4]);
-        const volume = Number(arr[5]);
-        const amount = arr[6] != null ? Number(arr[6]) : undefined;
-        const ts = Date.parse(date + "T00:00:00+08:00");
-        return { ts, date, open, close, high, low, volume, amount };
-      })
-      .filter((b) => Number.isFinite(b.ts) && Number.isFinite(b.close));
-
+    const bars = parseKlineRows(raw);
     res.json(bars);
   } catch (e: any) {
+    const message = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get("/api/mt4/bars", async (req, res) => {
+  const code = String(req.query.code || "")
+    .trim()
+    .toLowerCase();
+  const timeframe = String(req.query.timeframe || "D1").toUpperCase();
+  const format = String(req.query.format || "json").toLowerCase();
+  const count = Math.min(Math.max(Number(req.query.count) || 240, 20), 500);
+  if (!code) return res.status(400).json({ error: "missing code" });
+
+  const period =
+    timeframe === "W1" ? "weekly" : timeframe === "MN1" ? "monthly" : "daily";
+
+  try {
+    const raw = await fetchKline({
+      code,
+      period,
+      count,
+    });
+    const bars = parseKlineRows(raw);
+    if (format === "csv") {
+      res.type("text/csv; charset=utf-8").send(buildMt4Csv(bars));
+      return;
+    }
+    res.json({
+      symbol: toMt4Symbol(code),
+      timeframe,
+      bars,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get("/api/mt4/quote", async (req, res) => {
+  const code = String(req.query.code || "")
+    .trim()
+    .toLowerCase();
+  const format = String(req.query.format || "json").toLowerCase();
+  if (!code) return res.status(400).json({ error: "missing code" });
+
+  try {
+    const quote = await fetchSingleAshareQuote(code);
+    if (format === "kv") {
+      res.type("text/plain; charset=utf-8").send(
+        [
+          `code=${quote.code}`,
+          `name=${quote.name}`,
+          `price=${quote.price.toFixed(3)}`,
+          `open=${quote.open.toFixed(3)}`,
+          `high=${quote.high.toFixed(3)}`,
+          `low=${quote.low.toFixed(3)}`,
+          `percent=${quote.percent.toFixed(2)}`,
+          `time=${quote.time}`,
+        ].join("\n"),
+      );
+      return;
+    }
+    res.json(quote);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get("/api/mt4/signal", async (req, res) => {
+  const code = String(req.query.code || "")
+    .trim()
+    .toLowerCase();
+  const timeframe = String(req.query.timeframe || "D1").toUpperCase();
+  const format = String(req.query.format || "json").toLowerCase();
+  const count = Math.min(Math.max(Number(req.query.count) || 240, 60), 500);
+  if (!code) return res.status(400).json({ error: "missing code" });
+
+  const period =
+    timeframe === "W1" ? "weekly" : timeframe === "MN1" ? "monthly" : "daily";
+
+  try {
+    const raw = await fetchKline({
+      code,
+      period,
+      count,
+    });
+    const bars = parseKlineRows(raw);
+    const signal = analyzeMt4Bars(bars);
+
+    if (format === "kv") {
+      res.type("text/plain; charset=utf-8").send(
+        [
+          `bias=${signal.bias}`,
+          `regime=${signal.regime}`,
+          `setup=${signal.setup}`,
+          `score=${signal.score.toFixed(0)}`,
+          `summary=${signal.summary}`,
+          `entry_low=${signal.levels.entryLow.toFixed(3)}`,
+          `entry_high=${signal.levels.entryHigh.toFixed(3)}`,
+          `stop=${signal.levels.stop.toFixed(3)}`,
+          `take1=${signal.levels.take1.toFixed(3)}`,
+          `take2=${signal.levels.take2.toFixed(3)}`,
+          `rsi14=${signal.indicators.rsi14.toFixed(1)}`,
+          `atr14=${signal.indicators.atr14.toFixed(3)}`,
+        ].join("\n"),
+      );
+      return;
+    }
+
+    res.json(signal);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get("/api/mt4/hst", async (req, res) => {
+  const code = String(req.query.code || "")
+    .trim()
+    .toLowerCase();
+  const timeframe = String(req.query.timeframe || "D1").toUpperCase();
+  const count = Math.min(Math.max(Number(req.query.count) || 240, 20), 500);
+  if (!code) return res.status(400).json({ error: "missing code" });
+
+  const period =
+    timeframe === "W1" ? "weekly" : timeframe === "MN1" ? "monthly" : "daily";
+
+  try {
+    const [raw, quote] = await Promise.all([
+      fetchKline({
+        code,
+        period,
+        count,
+      }),
+      fetchSingleAshareQuote(code),
+    ]);
+    const bars = parseKlineRows(raw);
+    const symbol = toMt4Symbol(code);
+    const file = buildHstFile({
+      symbol,
+      period: timeframe === "W1" ? "W1" : timeframe === "MN1" ? "MN1" : "D1",
+      digits: inferDigits(quote.price),
+      bars,
+    });
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${symbol}_${timeframe}.hst"`,
+    );
+    res.send(file);
+  } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     res.status(500).json({ error: message });
   }
