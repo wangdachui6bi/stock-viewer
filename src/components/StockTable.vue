@@ -16,7 +16,7 @@
         :key="row.code"
         class="mobile-row"
         :class="{ 'is-sell-out': row.isSellOut }"
-        @click="emit('kline', row)"
+        @click="emit('aiAnalyze', row)"
       >
         <div class="mobile-main">
           <div class="mobile-name-row">
@@ -251,9 +251,33 @@
             }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" align="center" fixed="right">
+        <el-table-column label="操作" width="160" align="center" fixed="right">
           <template #default="{ row }">
             <div class="action-icons">
+              <el-tooltip content="AI 分析" placement="top" :show-after="400">
+                <el-button
+                  link
+                  size="small"
+                  class="act-btn act-ai"
+                  @click="emit('aiAnalyze', row)"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M12 2a4 4 0 0 1 4 4v1a1 1 0 0 0 1 1h1a4 4 0 0 1 0 8h-1a1 1 0 0 0-1 1v1a4 4 0 0 1-8 0v-1a1 1 0 0 0-1-1H6a4 4 0 0 1 0-8h1a1 1 0 0 0 1-1V6a4 4 0 0 1 4-4z"
+                    />
+                    <circle cx="12" cy="12" r="2" />
+                  </svg>
+                </el-button>
+              </el-tooltip>
               <el-tooltip content="K线图" placement="top" :show-after="400">
                 <el-button
                   link
@@ -345,6 +369,7 @@ defineProps<{
 const emit = defineEmits<{
   remove: [code: string];
   setHolding: [row: StockItem];
+  aiAnalyze: [row: StockItem];
   kline: [row: StockItem];
 }>();
 
