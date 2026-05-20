@@ -9,6 +9,10 @@ RUN yarn install --frozen-lockfile --production=false
 
 # --- Build frontend + compile server ---
 FROM base AS builder
+ARG VITE_AUTH_API_BASE
+ARG VITE_STOCK_API_BASE
+ENV VITE_AUTH_API_BASE=${VITE_AUTH_API_BASE}
+ENV VITE_STOCK_API_BASE=${VITE_STOCK_API_BASE}
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN yarn build

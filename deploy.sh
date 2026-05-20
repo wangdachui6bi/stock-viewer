@@ -21,6 +21,6 @@ rsync -avz --delete \
   ./ "$SERVER:$DEPLOY_PATH/"
 
 echo "==> 构建并启动"
-ssh "$SERVER" "cd $DEPLOY_PATH && docker compose down && docker compose up -d --build --remove-orphans && docker image prune -f && docker compose ps"
+ssh "$SERVER" "cd $DEPLOY_PATH && docker compose --env-file .env.local down && docker compose --env-file .env.local up -d --build --remove-orphans && docker image prune -f && docker compose --env-file .env.local ps"
 
 echo "==> 完成！"

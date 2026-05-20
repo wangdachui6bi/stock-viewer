@@ -1,6 +1,10 @@
 services:
   stock-viewer:
-    build: .
+    build:
+      context: .
+      args:
+        VITE_AUTH_API_BASE: ${VITE_AUTH_API_BASE:-}
+        VITE_STOCK_API_BASE: ${VITE_STOCK_API_BASE:-}
     container_name: stock-viewer
     restart: unless-stopped
     ports:
