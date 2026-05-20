@@ -237,6 +237,16 @@ async function fetchHotSectors(limit = 10) {
   };
 }
 
+function parseNumberLike(value: unknown) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const text = String(value ?? "")
+    .replace(/,/g, "")
+    .replace(/%/g, "")
+    .trim();
+  const num = Number(text);
+  return Number.isFinite(num) ? num : 0;
+}
+
 async function fetchSectorConstituents(bkCode: string, limit = 30) {
   const fields = "f12,f14,f2,f3,f4,f5,f6,f15,f16,f17";
   const diff = await fetchEastmoneyClist({
@@ -265,6 +275,43 @@ async function fetchSectorConstituents(bkCode: string, limit = 30) {
       open: x.f17,
     }))
     .filter((s: any) => s.code && s.name);
+}
+
+function rankHotSectors(
+  sectors: Awaited<ReturnType<typeof fetchHotSectors>>,
+  limit = 12,
+) {
+  const merged = [
+    ...sectors.industry.map((item) => ({ ...item, kind: "industry" as const })),
+    ...sectors.concept.map((item) => ({ ...item, kind: "concept" as const })),
+  ];
+
+  const scored = merged
+    .map((item) => {
+      const percent = parseNumberLike(item.percent);
+      const amount = parseNumberLike(item.amount);
+      const mainNetIn = parseNumberLike(item.mainNetIn);
+      const score =
+        percent * 100 +
+        Math.log10(Math.max(amount, 1)) * 8 +
+        Math.sign(mainNetIn) * Math.log10(Math.max(Math.abs(mainNetIn), 1)) * 6;
+      return {
+        ...item,
+        percent,
+        amount,
+        mainNetIn,
+        score: Number(score.toFixed(2)),
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const seen = new Set<string>();
+  return scored.filter((item) => {
+    const key = `${item.kind}:${item.code}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, Math.min(Math.max(limit, 1), 30));
 }
 
 async function fetchAshareSnapshot(limit = 200) {
@@ -1696,6 +1743,58 @@ app.get("/api/news", async (req, res) => {
     const message = e instanceof Error ? e.message : String(e);
     logRequestError("sina:news", start || Date.now(), e, { limit });
     console.error("/api/news", message);
+    res.status(500).json({ error: message });
+  }
+});
+
+// 原始板块榜：不依赖 AI key，供 skill 自主找主线板块
+app.get("/api/a/hot-sectors", async (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 12, 1), 30);
+  const kind = String(req.query.kind || "all").toLowerCase();
+
+  try {
+    const sectors = await fetchHotSectors(limit);
+    if (kind === "industry") {
+      res.json({ kind, sectors: sectors.industry.slice(0, limit) });
+      return;
+    }
+    if (kind === "concept") {
+      res.json({ kind, sectors: sectors.concept.slice(0, limit) });
+      return;
+    }
+
+    res.json({
+      kind: "all",
+      sectors: rankHotSectors(sectors, limit),
+      industry: sectors.industry.slice(0, limit),
+      concept: sectors.concept.slice(0, limit),
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("/api/a/hot-sectors", message);
+    res.status(500).json({ error: message });
+  }
+});
+
+// 原始板块成分股：供 skill 先找板块，再找板块内个股
+app.get("/api/a/sector-stocks", async (req, res) => {
+  const bkCode = String(req.query.bkCode || req.query.code || "").trim();
+  const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 200);
+
+  if (!bkCode) {
+    return res.status(400).json({ error: "missing bkCode" });
+  }
+
+  try {
+    const stocks = await fetchSectorConstituents(bkCode, limit);
+    res.json({
+      bkCode,
+      total: stocks.length,
+      stocks,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("/api/a/sector-stocks", message);
     res.status(500).json({ error: message });
   }
 });

@@ -54,6 +54,14 @@ function formatNum(val = 0, fixed = 2, format = false) {
   return num.toFixed(fixed);
 }
 
+function formatSignedPercent(updown: number, yestclose: string | number) {
+  const base = Number(yestclose);
+  const percent = (base ? (Math.abs(updown) / base) * 100 : 0).toFixed(2);
+  if (updown > 0) return `+${percent}`;
+  if (updown < 0) return `-${percent}`;
+  return percent;
+}
+
 /**
  * 解析新浪 hq.sinajs.cn 返回的文本
  */
@@ -88,7 +96,6 @@ function parseSinaStockResponse(body: string, codes: string[]): StockItem[] {
         low = params[5];
       fixedNumber = calcFixedPriceNumber(open, yestclose, price, high, low);
       const updown = +price - +yestclose;
-      const percent = ((Math.abs(updown) / +yestclose) * 100).toFixed(2);
       item = {
         code,
         name: params[0],
@@ -101,7 +108,7 @@ function parseSinaStockResponse(body: string, codes: string[]): StockItem[] {
         amount: formatNum(params[9], 2, true),
         time: `${params[30] || ""} ${params[31] || ""}`.trim(),
         updown: formatNum(updown, fixedNumber, false),
-        percent: (updown >= 0 ? "+" : "") + percent,
+        percent: formatSignedPercent(updown, yestclose),
         type: "a",
         symbol,
       };
@@ -115,7 +122,6 @@ function parseSinaStockResponse(body: string, codes: string[]): StockItem[] {
         low = params[7];
       fixedNumber = calcFixedPriceNumber(open, yestclose, price, high, low);
       const updown = +price - +yestclose;
-      const percent = ((Math.abs(updown) / +yestclose) * 100).toFixed(2);
       item = {
         code,
         name: params[0],
@@ -128,7 +134,7 @@ function parseSinaStockResponse(body: string, codes: string[]): StockItem[] {
         amount: "—",
         time: params[3] || "",
         updown: formatNum(updown, fixedNumber, false),
-        percent: (updown >= 0 ? "+" : "") + percent,
+        percent: formatSignedPercent(updown, yestclose),
         type: "us",
         symbol: symbolUs,
       };
@@ -154,7 +160,6 @@ function parseSinaStockResponse(body: string, codes: string[]): StockItem[] {
       }
       fixedNumber = calcFixedPriceNumber(open, yestclose, price, high, low);
       const updown = +price - +yestclose;
-      const percent = (+yestclose ? (Math.abs(updown) / +yestclose) * 100 : 0).toFixed(2);
       item = {
         code,
         name,
@@ -167,7 +172,7 @@ function parseSinaStockResponse(body: string, codes: string[]): StockItem[] {
         amount: "—",
         time: "",
         updown: formatNum(updown, fixedNumber, false),
-        percent: (updown >= 0 ? "+" : "") + percent,
+        percent: formatSignedPercent(updown, yestclose),
         type: "nf",
         symbol: code.replace("nf_", ""),
       };
@@ -186,7 +191,6 @@ function parseSinaStockResponse(body: string, codes: string[]): StockItem[] {
       let volume = params.length >= 15 ? (params[14] || "").slice(0, -1) : 0;
       fixedNumber = calcFixedPriceNumber(open, yestclose, price, high, low);
       const updown = +price - +yestclose;
-      const percent = (+yestclose ? (Math.abs(updown) / +yestclose) * 100 : 0).toFixed(2);
       item = {
         code,
         name,
@@ -199,7 +203,7 @@ function parseSinaStockResponse(body: string, codes: string[]): StockItem[] {
         amount: "—",
         time: `${params[12] || ""} ${params[6] || ""}`.trim(),
         updown: formatNum(updown, fixedNumber, false),
-        percent: (updown >= 0 ? "+" : "") + percent,
+        percent: formatSignedPercent(updown, yestclose),
         type: "hf",
         symbol: code.replace("hf_", ""),
       };
@@ -229,7 +233,6 @@ function parseTencentHKResponse(data: Record<string, any>, codes: string[]): Sto
       low = arr[34];
     const fixedNumber = calcFixedPriceNumber(open, yestclose, price, high, low);
     const updown = +price - +yestclose;
-    const percent = (+yestclose ? (Math.abs(updown) / +yestclose) * 100 : 0).toFixed(2);
     return {
       code: codeNorm,
       name: arr[1],
@@ -242,7 +245,7 @@ function parseTencentHKResponse(data: Record<string, any>, codes: string[]): Sto
       amount: formatNum(arr[37] || 0, 2, true),
       time: arr[30] || "",
       updown: formatNum(updown, fixedNumber, false),
-      percent: (updown >= 0 ? "+" : "") + percent,
+      percent: formatSignedPercent(updown, yestclose),
       type: "hk",
       symbol: codeNorm.replace("hk", ""),
     };
